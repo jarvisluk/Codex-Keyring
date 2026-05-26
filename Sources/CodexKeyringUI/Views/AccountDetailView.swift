@@ -5,6 +5,7 @@ struct AccountDetailView: View {
     @EnvironmentObject private var store: AccountStore
     @State private var showingRemoveConfirmation = false
     @State private var aliasDraft = ""
+    @FocusState private var isAliasFieldFocused: Bool
 
     var account: CodexAccount
 
@@ -28,6 +29,10 @@ struct AccountDetailView: View {
             aliasDraft = account.alias
         }
         .onChange(of: account.id) {
+            aliasDraft = account.alias
+            isAliasFieldFocused = false
+        }
+        .onChange(of: account.alias) {
             aliasDraft = account.alias
         }
         .confirmationDialog("Remove saved account?", isPresented: $showingRemoveConfirmation) {
@@ -85,12 +90,21 @@ struct AccountDetailView: View {
             HStack {
                 TextField("Alias", text: $aliasDraft)
                     .textFieldStyle(.roundedBorder)
+                    .focused($isAliasFieldFocused)
+                    .onSubmit {
+                        submitAliasRename()
+                    }
                     .frame(maxWidth: 280)
                 Button("Rename") {
-                    store.rename(account, to: aliasDraft)
+                    submitAliasRename()
                 }
             }
         }
+    }
+
+    private func submitAliasRename() {
+        isAliasFieldFocused = false
+        store.rename(account, to: aliasDraft)
     }
 
     private var metadata: some View {

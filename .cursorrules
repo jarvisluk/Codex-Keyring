@@ -1,0 +1,66 @@
+# Cursor Rules (legacy file)
+#
+# This file exists so Cursor's Source Control "Generate Commit Message" (✨)
+# button picks up our commit conventions. The modern `.cursor/rules/*.mdc`
+# and `AGENTS.md` files are NOT read by that button as of 2026-05.
+# Keep this file in sync with `.cursor/rules/commit-messages.mdc`.
+
+## Commit Message Rules
+
+All commits MUST follow Conventional Commits in English.
+
+### Format
+
+```
+<type>(<scope>): <subject>
+
+[optional body]
+
+[optional footer]
+```
+
+- Subject: imperative mood, lowercase start, no trailing period, ≤ 72 chars.
+- Body: include ONLY when the change is non-trivial — explain the WHY, not the what. Wrap at 72 chars. Blank line between subject and body.
+- Footer: `BREAKING CHANGE: <desc>` or `Refs: #123` when applicable.
+
+### Allowed Types
+
+`feat`, `fix`, `refactor`, `perf`, `docs`, `style`, `test`, `build`, `ci`, `chore`, `revert`.
+
+### Suggested Scopes
+
+`accounts`, `auth`, `oauth`, `snapshot`, `menubar`, `ui`, `launch`, `backup`, `build`, `script`, `docs`.
+
+Omit the scope when redundant or when the change spans the whole app.
+
+### Examples
+
+```
+feat(menubar): add quick switch shortcut for saved accounts
+fix(oauth): handle expired refresh token before switching
+refactor(accounts): extract snapshot rotation into AccountStore
+docs: update ROADMAP with quota query milestone
+chore(build): bump SwiftPM toolchain pin
+```
+
+With body (complex change):
+
+```
+fix(snapshot): keep saved snapshot in sync with rotated auth.json
+
+Codex App rotates the refresh token in-place. Re-capture the live bytes
+back into the matching saved snapshot, and refuse to switch away from an
+account whose token has rotated without a re-snapshot.
+```
+
+### Hard Rules When Generating a Commit Message
+
+- ALWAYS output ONLY the commit message — no preamble, no explanation, no code fences.
+- ALWAYS pick exactly ONE type prefix from the allowed list above.
+- NEVER use vague subjects like "update code", "fix bug", "enhance app", "misc changes".
+- NEVER capitalize the subject's first word (after the type prefix).
+- NEVER end the subject with a period.
+- NEVER exceed 72 characters in the subject line.
+- NEVER include a body unless the diff actually warrants a "why" explanation.
+- NEVER add tool signatures such as "Generated with ..." or "Co-Authored-By: <bot>".
+- NEVER mix unrelated changes — if the diff covers multiple concerns, describe the dominant one and note the rest only if essential.

@@ -1,0 +1,71 @@
+---
+description: Conventional Commits rules for git commit messages
+alwaysApply: true
+---
+
+# Commit Message Rules
+
+All commits MUST follow [Conventional Commits](https://www.conventionalcommits.org/) in **English**.
+
+## Format
+
+```
+<type>(<scope>): <subject>
+
+[optional body]
+
+[optional footer]
+```
+
+- Subject: imperative mood, lowercase start, no trailing period, ≤ 72 chars.
+- Body: include ONLY when the change is non-trivial — explain the **why**, not the what. Wrap at 72 chars. Separate from subject with one blank line.
+- Footer: use `BREAKING CHANGE: <desc>` or `Refs: #123` when applicable.
+
+## Allowed Types
+
+| Type       | Use for                                                  |
+|------------|----------------------------------------------------------|
+| `feat`     | New user-visible feature                                 |
+| `fix`      | Bug fix                                                  |
+| `refactor` | Code restructuring without behavior change               |
+| `perf`     | Performance improvement                                  |
+| `docs`     | README, comments, ROADMAP, AGENTS.md, etc.               |
+| `style`    | Formatting / whitespace (no code change)                 |
+| `test`     | Adding or fixing tests                                   |
+| `build`    | Build system, SwiftPM, scripts under `script/`           |
+| `ci`       | CI configuration                                         |
+| `chore`    | Misc maintenance not covered above                       |
+| `revert`   | Revert a prior commit                                    |
+
+## Suggested Scopes (this project)
+
+`accounts`, `auth`, `oauth`, `snapshot`, `menubar`, `ui`, `launch`, `backup`, `build`, `script`, `docs`.
+
+Omit the scope when it would be redundant or span the whole app.
+
+## Examples
+
+```
+feat(menubar): add quick switch shortcut for saved accounts
+fix(oauth): handle expired refresh token before switching
+refactor(accounts): extract snapshot rotation into AccountStore
+docs: update ROADMAP with quota query milestone
+chore(build): bump SwiftPM toolchain pin
+```
+
+Example with body (complex change):
+
+```
+fix(snapshot): keep saved snapshot in sync with rotated auth.json
+
+Codex App rotates the refresh token in-place. Re-capture the live bytes
+back into the matching saved snapshot, and refuse to switch away from an
+account whose token has rotated without a re-snapshot.
+```
+
+## Hard Rules
+
+- NEVER use vague subjects like "update code", "fix bug", "misc changes".
+- NEVER mix unrelated changes in one commit — split them.
+- NEVER add tool signatures like "Generated with ..." or "Co-Authored-By: <bot>" unless the user explicitly asks.
+- NEVER commit unless the user explicitly asks (see global git safety protocol).

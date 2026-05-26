@@ -1,10 +1,9 @@
 import Foundation
 import ServiceManagement
-import os
 import CodexKeyringDomain
 
 public struct SMAppServiceLaunchAtLogin: LaunchAtLoginControlling {
-    private let log = CodexKeyringLog.make(.launchAtLogin)
+    private let log = CodexKeyringLog.makeAppLogger(.launchAtLogin)
 
     public init() {}
 
@@ -35,7 +34,7 @@ public struct SMAppServiceLaunchAtLogin: LaunchAtLoginControlling {
                 log.info("launch-at-login unregistered")
             }
         } catch {
-            log.error("launch-at-login change failed: \(String(describing: error), privacy: .public)")
+            log.error("launch-at-login change failed: \(String(describing: error))")
             throw CodexKeyringError.launchAtLoginFailed(reason: error.localizedDescription)
         }
     }

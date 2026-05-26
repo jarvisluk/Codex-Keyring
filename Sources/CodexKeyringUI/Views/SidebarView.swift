@@ -1,6 +1,5 @@
 import SwiftUI
 import CodexKeyringDomain
-import CodexKeyringInfrastructure
 
 struct SidebarView: View {
     @EnvironmentObject private var store: AccountStore
@@ -19,7 +18,7 @@ struct SidebarView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(store.currentAuthMetadata?.email ?? "No readable auth.json")
                         .lineLimit(1)
-                    Text(AppPaths.codexAuthFile.path)
+                    Text(store.storageLocations.codexAuthPath)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -28,6 +27,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
         .safeAreaInset(edge: .bottom) {
             Text(store.statusMessage)
                 .font(.caption)

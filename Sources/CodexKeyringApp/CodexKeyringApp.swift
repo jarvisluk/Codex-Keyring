@@ -1,18 +1,25 @@
 import AppKit
 import SwiftUI
 import CodexKeyringUI
+import CodexKeyringInfrastructure
+import CodexKeyringDomain
 
 @main
 struct CodexKeyringApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var store = AccountStore()
+    @StateObject private var store: AccountStore
+
+    init() {
+        _store = StateObject(wrappedValue: Self.makeStore())
+    }
 
     var body: some Scene {
-        WindowGroup("Codex Keyring", id: "main") {
+        Window("Codex Keyring", id: "main") {
             ContentView()
                 .environmentObject(store)
-                .frame(minWidth: 860, minHeight: 560)
+                .frame(minWidth: 920, minHeight: 600)
         }
+        .defaultSize(width: 1040, height: 680)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .appInfo) {
@@ -48,5 +55,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+}
+
+private extension CodexKeyringApp {
+    @MainActor
+    static func makeStore() -> AccountStore {
+        try? AppPaths.ensureDirectories()
+        CodexKeyringLog.bootstrapFileSink()
+        let appLogger = CodexKeyringLog.makeAppLogger(.app)
+        appLogger.info("Codex Keyring launching; logFile=\(AppPaths.currentLogFile.path)")
+
+        let repository = FileSystemManifestRepository()
+        let installer = LiveCodexAuthInstaller()
+        let authReader = AuthFileParser()
+        return AccountStore(
+            repository: repository,
+            installer: installer,
+            authReader: authReader,
+            appController: NSWorkspaceCodexAppController(),
+            launchAtLoginController: SMAppServiceLaunchAtLogin(),
+            loginService: ChatGPTOAuthLoginService(),
+            storageLocations: AccountStorageLocations(
+                codexAuthPath: AppPaths.codexAuthFile.path,
+                applicationSupportPath: AppPaths.applicationSupportDirectory.path,
+                accountsDirectoryPath: AppPaths.accountsDirectory.path,
+                backupsDirectoryPath: AppPaths.backupsDirectory.path,
+                logsDirectoryPath: AppPaths.logsDirectory.path,
+                currentLogFilePath: AppPaths.currentLogFile.path
+            ),
+            openAuthURL: { url in
+                try await MainActor.run {
+                    guard NSWorkspace.shared.open(url) else {
+                        throw CodexKeyringError.codexLoginFailed(reason: "Could not open \(url.absoluteString).")
+                    }
+                }
+            },
+            logService: CodexKeyringLog.makeAppLogger(.store),
+            liveAuthWatcher: LiveAuthFileWatcher()
+        )
     }
 }

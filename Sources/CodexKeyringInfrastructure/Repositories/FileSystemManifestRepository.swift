@@ -1,5 +1,4 @@
 import Foundation
-import os
 import CodexKeyringDomain
 
 /// `AccountRepository` backed by the local file system under
@@ -13,7 +12,7 @@ public struct FileSystemManifestRepository: AccountRepository {
     public let accountsDirectory: URL
     public let applicationSupportDirectory: URL
 
-    private let log = CodexKeyringLog.make(.manifest)
+    private let log = CodexKeyringLog.makeAppLogger(.manifest)
     private var fileManager: FileManager { .default }
 
     public init(
@@ -39,7 +38,7 @@ public struct FileSystemManifestRepository: AccountRepository {
             normalized.accounts.sort { $0.alias.localizedCaseInsensitiveCompare($1.alias) == .orderedAscending }
             return normalized
         } catch {
-            log.error("failed to decode manifest: \(String(describing: error), privacy: .public)")
+            log.error("failed to decode manifest: \(String(describing: error))")
             throw CodexKeyringError.fileSystemFailure(reason: "Could not read profiles.json: \(error.localizedDescription)")
         }
     }
@@ -49,9 +48,9 @@ public struct FileSystemManifestRepository: AccountRepository {
         do {
             let data = try Self.encoder.encode(manifest)
             try data.write(to: manifestURL, options: .atomic)
-            log.debug("manifest saved (\(manifest.accounts.count, privacy: .public) accounts)")
+            log.debug("manifest saved (\(manifest.accounts.count) accounts)")
         } catch {
-            log.error("failed to write manifest: \(String(describing: error), privacy: .public)")
+            log.error("failed to write manifest: \(String(describing: error))")
             throw CodexKeyringError.fileSystemFailure(reason: "Could not write profiles.json: \(error.localizedDescription)")
         }
     }
@@ -61,7 +60,7 @@ public struct FileSystemManifestRepository: AccountRepository {
         let fileName = "\(accountID.uuidString).auth.json"
         let destination = accountsDirectory.appendingPathComponent(fileName)
         try writeAtomically(from: source, to: destination)
-        log.debug("snapshot written for \(accountID.uuidString, privacy: .public)")
+        log.debug("snapshot written for \(accountID.uuidString)")
         return fileName
     }
 
@@ -70,7 +69,7 @@ public struct FileSystemManifestRepository: AccountRepository {
         guard fileManager.fileExists(atPath: url.path) else { return }
         do {
             try fileManager.removeItem(at: url)
-            log.debug("snapshot deleted \(fileName, privacy: .public)")
+            log.debug("snapshot deleted \(fileName)")
         } catch {
             throw CodexKeyringError.fileSystemFailure(reason: "Could not delete snapshot: \(error.localizedDescription)")
         }

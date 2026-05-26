@@ -31,7 +31,8 @@ public struct AddAccountUseCase: Sendable {
 
     public func callAsFunction(
         sourceURL: URL,
-        requestedAlias: String?
+        requestedAlias: String?,
+        activate: Bool = true
     ) async throws -> AddAccountResult {
         let metadata = try await authReader.read(from: sourceURL)
         var manifest = try await repository.load()
@@ -51,7 +52,9 @@ public struct AddAccountUseCase: Sendable {
             updated.tokenExpiresAt = metadata.tokenExpiresAt
             updated.updatedAt = now
             manifest.accounts[index] = updated
-            manifest.activeAccountID = updated.id
+            if activate {
+                manifest.activeAccountID = updated.id
+            }
             try await repository.save(manifest)
 
             let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
@@ -86,7 +89,9 @@ public struct AddAccountUseCase: Sendable {
         )
         manifest.accounts.append(account)
         manifest.accounts = sorted(manifest.accounts)
-        manifest.activeAccountID = account.id
+        if activate {
+            manifest.activeAccountID = account.id
+        }
         try await repository.save(manifest)
 
         let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)

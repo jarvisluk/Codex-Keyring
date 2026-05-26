@@ -1,6 +1,5 @@
 import SwiftUI
 import CodexKeyringDomain
-import CodexKeyringInfrastructure
 
 struct AccountDetailView: View {
     @EnvironmentObject private var store: AccountStore
@@ -100,14 +99,18 @@ struct AccountDetailView: View {
             detailRow("Plan", account.plan)
             detailRow("Account ID", account.accountIdentifier)
             detailRow("Fingerprint", account.shortFingerprint)
-            detailRow("Saved", DisplayFormatters.date.string(from: account.createdAt))
-            detailRow("Updated", DisplayFormatters.date.string(from: account.updatedAt))
+            detailRow("Saved", formatDate(account.createdAt))
+            detailRow("Updated", formatDate(account.updatedAt))
             if let expiry = account.tokenExpiresAt {
-                detailRow("Token expires", DisplayFormatters.date.string(from: expiry))
+                detailRow("Token expires", formatDate(expiry))
             }
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .shortened)
     }
 
     private func detailRow(_ title: String, _ value: String) -> some View {
@@ -125,7 +128,7 @@ struct AccountDetailView: View {
                 .font(.headline)
             Text("The app stores auth snapshots locally and only shows metadata such as email, plan, and fingerprint. It does not display access tokens or API keys.")
                 .foregroundStyle(.secondary)
-            Text("Snapshots live in \(AppPaths.accountsDirectory.path). Backups before switching live in \(AppPaths.backupsDirectory.path).")
+            Text("Snapshots live in \(store.storageLocations.accountsDirectoryPath). Backups before switching live in \(store.storageLocations.backupsDirectoryPath).")
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
         }

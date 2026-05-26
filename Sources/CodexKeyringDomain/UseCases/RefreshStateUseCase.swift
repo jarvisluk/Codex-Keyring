@@ -5,43 +5,53 @@ public struct RefreshStateUseCase: Sendable {
     private let repository: AccountRepository
     private let installer: CodexAuthInstalling
     private let authReader: AuthFileReading
+    private let syncLiveAuth: SyncLiveAuthUseCase
 
     public init(
         repository: AccountRepository,
         installer: CodexAuthInstalling,
-        authReader: AuthFileReading
+        authReader: AuthFileReading,
+        clock: Clock = SystemClock()
     ) {
         self.repository = repository
         self.installer = installer
         self.authReader = authReader
+        self.syncLiveAuth = SyncLiveAuthUseCase(
+            repository: repository,
+            installer: installer,
+            authReader: authReader,
+            clock: clock
+        )
     }
 
     public func callAsFunction() async throws -> AccountState {
-        let manifest = try await repository.load()
+        var manifest = try await repository.load()
         let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
 
-        var activeID = manifest.activeAccountID
-        if let fingerprint = currentAuth?.fingerprint,
-           let match = manifest.accounts.first(where: { $0.fingerprint == fingerprint }) {
-            activeID = match.id
+        // Keep the saved snapshot for whichever account currently owns the
+        // live auth file in lock-step with the live bytes. This is how we
+        // capture the rotating OAuth refresh token before Codex App's next
+        // refresh invalidates whatever copy we already had on disk.
+        if let currentAuth {
+            _ = try? await syncLiveAuth.sync(
+                liveMetadata: currentAuth,
+                liveURL: installer.liveAuthFileURL,
+                manifest: &manifest
+            )
         }
 
-        let needsSync = activeID != manifest.activeAccountID
-        let resolvedManifest: AccountManifest
-        if needsSync {
-            var updated = manifest
-            updated.activeAccountID = activeID
-            try await repository.save(updated)
-            resolvedManifest = updated
+        let refreshedMetadata: AuthMetadata?
+        if currentAuth != nil {
+            refreshedMetadata = try? await authReader.read(from: installer.liveAuthFileURL)
         } else {
-            resolvedManifest = manifest
+            refreshedMetadata = nil
         }
 
         return AccountState(
-            accounts: resolvedManifest.accounts,
-            activeAccountID: resolvedManifest.activeAccountID,
-            settings: resolvedManifest.settings,
-            currentAuthMetadata: currentAuth
+            accounts: manifest.accounts,
+            activeAccountID: manifest.activeAccountID,
+            settings: manifest.settings,
+            currentAuthMetadata: refreshedMetadata
         )
     }
 }

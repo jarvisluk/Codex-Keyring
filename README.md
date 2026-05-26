@@ -19,6 +19,11 @@ manager window, a persistent menu bar item, and local-only account snapshots.
 - Offers a menu bar item for quick switching and background use.
 - Can restart Codex App after switching so the desktop app can reload auth.
 - Includes Launch at Login support through macOS ServiceManagement.
+- Keeps each saved snapshot in lock-step with `~/.codex/auth.json` so the
+  rotating OAuth refresh token never goes stale: whenever Codex App rewrites
+  the live auth file, the app captures the new bytes back into the matching
+  saved snapshot (and refuses to switch away from an account without first
+  re-snapshotting its rotated token).
 
 The first version intentionally avoids quota/account API calls. The setting is
 visible but disabled until a future version explicitly implements it.

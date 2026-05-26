@@ -1,114 +1,195 @@
 import AppKit
 import Foundation
-import os
 import CodexKeyringDomain
+
+/// Abstraction over a running app instance so we can substitute
+/// `NSRunningApplication` (which has no public initializer) in unit tests.
+public protocol RunningCodexApp: Sendable {
+    var processIdentifier: pid_t { get }
+    var isTerminated: Bool { get }
+    @discardableResult func terminate() -> Bool
+    @discardableResult func forceTerminate() -> Bool
+}
+
+extension NSRunningApplication: RunningCodexApp {}
+
+/// Provides the I/O primitives used by ``NSWorkspaceCodexAppController``.
+/// All members are async to make swapping in deterministic test doubles easy.
+public protocol CodexAppEnvironment: Sendable {
+    func runningCodexApps() -> [RunningCodexApp]
+    func bundleExists(at url: URL) -> Bool
+    func launchApp(at url: URL) async throws
+}
 
 /// `CodexAppControlling` implementation that drives the macOS Codex desktop app
 /// via `NSWorkspace`/`NSRunningApplication`.
 ///
 /// Termination polling uses `Task.sleep`, so the controller does not block the
-/// main actor while it waits for the previous Codex process to exit.
+/// main actor while it waits for the previous Codex process to exit. The
+/// controller also escalates a graceful `terminate()` request to
+/// `forceTerminate()` when the app refuses to quit (for example, when an
+/// unsaved-document sheet is up), so the relaunch step is only reached once
+/// every prior Codex process is truly gone — otherwise `NSWorkspace` will see
+/// the half-dead old instance and "activate" it instead of starting fresh.
 public struct NSWorkspaceCodexAppController: CodexAppControlling {
-    public let codexBundleIdentifier: String?
     public let codexAppURL: URL
     public let pollInterval: Duration
     public let pollAttempts: Int
 
-    private let log = CodexKeyringLog.make(.codexApp)
+    private let environment: CodexAppEnvironment
+    private let log = CodexKeyringLog.makeAppLogger(.codexApp)
 
     public init(
         codexBundleIdentifier: String? = "com.openai.codex",
         codexAppURL: URL = URL(fileURLWithPath: "/Applications/Codex.app", isDirectory: true),
-        pollInterval: Duration = .milliseconds(150),
-        pollAttempts: Int = 30
+        pollInterval: Duration = .milliseconds(200),
+        pollAttempts: Int = 75
     ) {
-        self.codexBundleIdentifier = codexBundleIdentifier
+        self.init(
+            environment: NSWorkspaceEnvironment(
+                bundleIdentifier: codexBundleIdentifier,
+                appURL: codexAppURL
+            ),
+            codexAppURL: codexAppURL,
+            pollInterval: pollInterval,
+            pollAttempts: pollAttempts
+        )
+    }
+
+    public init(
+        environment: CodexAppEnvironment,
+        codexAppURL: URL,
+        pollInterval: Duration = .milliseconds(200),
+        pollAttempts: Int = 75
+    ) {
+        self.environment = environment
         self.codexAppURL = codexAppURL
         self.pollInterval = pollInterval
         self.pollAttempts = pollAttempts
     }
 
     public var isRunning: Bool {
-        !runningCodexApplications().isEmpty
+        !environment.runningCodexApps().isEmpty
     }
 
     public func restartIfRunning() async throws -> CodexAppRestartOutcome {
-        let running = runningCodexApplications()
-        guard !running.isEmpty else {
+        let initial = environment.runningCodexApps()
+        guard !initial.isEmpty else {
             log.debug("codex app not running; no restart required")
             return .wasNotRunning
         }
 
-        for app in running { app.terminate() }
+        log.info("terminating \(initial.count) codex app process(es)")
+        try await terminate(initial)
 
-        for _ in 0..<pollAttempts {
-            if runningCodexApplications().isEmpty { break }
-            try? await Task.sleep(for: pollInterval)
-        }
-
-        guard FileManager.default.fileExists(atPath: codexAppURL.path) else {
-            log.warning("codex app bundle missing at \(self.codexAppURL.path, privacy: .public)")
+        guard environment.bundleExists(at: codexAppURL) else {
+            log.warning("codex app bundle missing at \(self.codexAppURL.path)")
             return .bundleMissing(path: codexAppURL.path)
         }
 
-        try await launchCodexApp()
+        do {
+            try await environment.launchApp(at: codexAppURL)
+        } catch {
+            throw CodexKeyringError.codexAppRelaunchFailed(reason: error.localizedDescription)
+        }
         log.info("codex app relaunched")
         return .relaunched
     }
 
-    @MainActor
-    private func launchCodexApp() async throws {
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        do {
-            _ = try await NSWorkspace.shared.openApplication(at: codexAppURL, configuration: configuration)
-        } catch {
-            throw CodexKeyringError.codexAppRelaunchFailed(reason: error.localizedDescription)
+    private func terminate(_ apps: [RunningCodexApp]) async throws {
+        var refused: [pid_t: RunningCodexApp] = [:]
+        for app in apps where !app.isTerminated {
+            let accepted = app.terminate()
+            if !accepted {
+                log.warning("codex app pid \(app.processIdentifier) refused graceful terminate")
+                refused[app.processIdentifier] = app
+            }
         }
+
+        if await waitForExit(of: apps) { return }
+
+        // Combine processes that refused with anything still alive in the workspace.
+        var stragglers = refused
+        for app in environment.runningCodexApps() where !app.isTerminated {
+            stragglers[app.processIdentifier] = app
+        }
+
+        guard !stragglers.isEmpty else { return }
+
+        log.warning("codex app still running after graceful terminate; escalating to forceTerminate")
+        for app in stragglers.values {
+            _ = app.forceTerminate()
+        }
+
+        if await waitForExit(of: Array(stragglers.values)) { return }
+
+        let pids = stragglers.keys.map(String.init).joined(separator: ", ")
+        throw CodexKeyringError.codexAppRelaunchFailed(
+            reason: "Codex app processes (\(pids)) did not exit after forceTerminate."
+        )
     }
 
-    private func runningCodexApplications() -> [NSRunningApplication] {
-        let apps = NSWorkspace.shared.runningApplications
-        if let bundleID = codexBundleIdentifier {
-            let matched = apps.filter { $0.bundleIdentifier == bundleID }
-            if !matched.isEmpty { return matched }
+    /// Polls until every supplied app reports `isTerminated` AND no fresh Codex
+    /// process is observed via the environment. Returns `true` if both
+    /// conditions hold inside the poll budget.
+    private func waitForExit(of apps: [RunningCodexApp]) async -> Bool {
+        for _ in 0..<pollAttempts {
+            let allOriginalExited = apps.allSatisfy { $0.isTerminated }
+            let noRemainingCodex = environment.runningCodexApps().isEmpty
+            if allOriginalExited && noRemainingCodex {
+                return true
+            }
+            try? await Task.sleep(for: pollInterval)
         }
-        return apps.filter { $0.bundleURL?.lastPathComponent == codexAppURL.lastPathComponent }
+        return false
     }
 }
 
-/// Legacy enum-style facade preserved for now so existing callers continue to
-/// compile. Internally delegates to ``NSWorkspaceCodexAppController``.
+/// Default ``CodexAppEnvironment`` backed by `NSWorkspace`/`NSRunningApplication`.
+public struct NSWorkspaceEnvironment: CodexAppEnvironment {
+    public let bundleIdentifier: String?
+    public let appURL: URL
+
+    public init(bundleIdentifier: String?, appURL: URL) {
+        self.bundleIdentifier = bundleIdentifier
+        self.appURL = appURL
+    }
+
+    public func runningCodexApps() -> [RunningCodexApp] {
+        let apps = NSWorkspace.shared.runningApplications
+        if let bundleID = bundleIdentifier {
+            let matched = apps.filter { $0.bundleIdentifier == bundleID }
+            if !matched.isEmpty { return matched }
+        }
+        return apps.filter { $0.bundleURL?.lastPathComponent == appURL.lastPathComponent }
+    }
+
+    public func bundleExists(at url: URL) -> Bool {
+        FileManager.default.fileExists(atPath: url.path)
+    }
+
+    @MainActor
+    public func launchApp(at url: URL) async throws {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        _ = try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+    }
+}
+
+/// Compatibility facade for callers that still want a message string instead
+/// of the typed ``CodexAppRestartOutcome``.
 public enum CodexAppController {
     public static var isCodexAppRunning: Bool {
         NSWorkspaceCodexAppController().isRunning
     }
 
-    public static func restartCodexAppIfRunning() throws -> String {
+    public static func restartCodexAppIfRunning() async throws -> String {
         let controller = NSWorkspaceCodexAppController()
-        let semaphore = DispatchSemaphore(value: 0)
-        nonisolated(unsafe) var capturedOutcome: Result<CodexAppRestartOutcome, Error> = .failure(
-            CodexKeyringError.codexAppRelaunchFailed(reason: "Operation cancelled.")
-        )
-        Task {
-            do {
-                let outcome = try await controller.restartIfRunning()
-                capturedOutcome = .success(outcome)
-            } catch {
-                capturedOutcome = .failure(error)
-            }
-            semaphore.signal()
-        }
-        semaphore.wait()
-        switch capturedOutcome {
-        case .success(let outcome):
-            return Self.message(for: outcome, bundlePath: controller.codexAppURL.path)
-        case .failure(let error):
-            throw error
-        }
+        let outcome = try await controller.restartIfRunning()
+        return Self.message(for: outcome)
     }
 
-    private static func message(for outcome: CodexAppRestartOutcome, bundlePath: String) -> String {
+    private static func message(for outcome: CodexAppRestartOutcome) -> String {
         switch outcome {
         case .wasNotRunning:
             return "Codex App was not running; Codex CLI will use the switched account immediately."

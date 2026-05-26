@@ -1,7 +1,6 @@
 import Foundation
 
-/// Persist a partial change to `AppSettings` while keeping `launchAtLogin`
-/// derived from the system (see `LaunchAtLoginControlling`).
+/// Persist a partial change to `AppSettings`.
 public struct UpdateSettingsUseCase: Sendable {
     private let repository: AccountRepository
 
@@ -15,6 +14,10 @@ public struct UpdateSettingsUseCase: Sendable {
 
     public func setAllowNetworkQuotaAPIs(_ value: Bool) async throws -> AppSettings {
         try await mutate { $0.allowNetworkQuotaAPIs = value }
+    }
+
+    public func setLaunchAtLogin(_ value: Bool) async throws -> AppSettings {
+        try await mutate { $0.launchAtLogin = value }
     }
 
     private func mutate(_ change: (inout AppSettings) -> Void) async throws -> AppSettings {

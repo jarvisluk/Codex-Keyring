@@ -1,6 +1,5 @@
 import CryptoKit
 import Foundation
-import os
 import CodexKeyringDomain
 
 public enum AuthMetadataError: LocalizedError, Equatable {
@@ -36,7 +35,7 @@ public enum AuthMetadataError: LocalizedError, Equatable {
 /// Conforms to ``AuthFileReading`` for protocol-driven injection while also
 /// exposing a static convenience for code that still uses the legacy API.
 public struct AuthFileParser: AuthFileReading {
-    private let log = CodexKeyringLog.make(.authParser)
+    private let log = CodexKeyringLog.makeAppLogger(.authParser)
 
     public init() {}
 
@@ -45,12 +44,12 @@ public struct AuthFileParser: AuthFileReading {
     }
 
     public static func parseAuthFile(at url: URL) throws -> AuthMetadata {
-        try parseAuthFile(at: url, logger: CodexKeyringLog.make(.authParser))
+        try parseAuthFile(at: url, logger: CodexKeyringLog.makeAppLogger(.authParser))
     }
 
-    static func parseAuthFile(at url: URL, logger: Logger) throws -> AuthMetadata {
+    static func parseAuthFile(at url: URL, logger: AppLogger) throws -> AuthMetadata {
         guard FileManager.default.fileExists(atPath: url.path) else {
-            logger.notice("auth file missing at \(url.path, privacy: .public)")
+            logger.notice("auth file missing at \(url.path)")
             throw CodexKeyringError.authFileMissing(url)
         }
 
@@ -60,13 +59,13 @@ public struct AuthFileParser: AuthFileReading {
         do {
             dto = try decoder.decode(AuthFileDTO.self, from: data)
         } catch {
-            logger.error("failed to decode auth file: \(String(describing: error), privacy: .public)")
+            logger.error("failed to decode auth file: \(String(describing: error))")
             throw CodexKeyringError.authFileUnreadable
         }
 
         let hasAPIKey = (dto.OPENAI_API_KEY ?? "").isEmpty == false
         let tokens = dto.tokens
-        guard hasAPIKey || tokens != nil else {
+        guard hasAPIKey || tokens?.hasRecognizedFields == true else {
             throw CodexKeyringError.unsupportedAuthShape
         }
 
@@ -121,6 +120,10 @@ private struct AuthFileDTO: Decodable {
 private struct TokensDTO: Decodable {
     let account_id: String?
     let id_token: String?
+
+    var hasRecognizedFields: Bool {
+        (account_id?.isEmpty == false) || (id_token?.isEmpty == false)
+    }
 }
 
 private struct JWTClaims {

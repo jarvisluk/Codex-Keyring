@@ -23,8 +23,7 @@ let package = Package(
         .target(
             name: "CodexKeyringUI",
             dependencies: [
-                "CodexKeyringDomain",
-                "CodexKeyringInfrastructure"
+                "CodexKeyringDomain"
             ]
         ),
         .target(

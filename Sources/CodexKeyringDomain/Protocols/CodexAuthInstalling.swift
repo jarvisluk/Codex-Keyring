@@ -11,4 +11,18 @@ public protocol CodexAuthInstalling: Sendable {
     /// Returns the URL of the written backup, or nil if no live file existed.
     @discardableResult
     func backupCurrent() async throws -> URL?
+
+    /// Copy the live Codex auth file into temporary staging storage.
+    /// Returns nil when there is no live auth file.
+    func stageLiveAuthIfPresent(prefix: String) async throws -> URL?
+
+    /// Copy the live Codex auth file into temporary staging storage.
+    /// Throws when the live auth file does not exist.
+    func stageRequiredLiveAuth(prefix: String) async throws -> URL
+
+    /// Restore a previously staged auth file, or remove the live auth when nil.
+    func restoreLiveAuth(from stagedURL: URL?) async throws
+
+    /// Delete a temporary staged auth file.
+    func removeStagedAuth(_ url: URL?) async
 }

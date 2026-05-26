@@ -15,17 +15,25 @@ public struct SwitchAccountUseCase: Sendable {
     private let installer: CodexAuthInstalling
     private let authReader: AuthFileReading
     private let appController: CodexAppControlling
+    private let syncLiveAuth: SyncLiveAuthUseCase
 
     public init(
         repository: AccountRepository,
         installer: CodexAuthInstalling,
         authReader: AuthFileReading,
-        appController: CodexAppControlling
+        appController: CodexAppControlling,
+        clock: Clock = SystemClock()
     ) {
         self.repository = repository
         self.installer = installer
         self.authReader = authReader
         self.appController = appController
+        self.syncLiveAuth = SyncLiveAuthUseCase(
+            repository: repository,
+            installer: installer,
+            authReader: authReader,
+            clock: clock
+        )
     }
 
     public func callAsFunction(
@@ -40,9 +48,26 @@ public struct SwitchAccountUseCase: Sendable {
             throw CodexKeyringError.snapshotMissing(accountID: account.id)
         }
 
-        let snapshotURL = repository.snapshotURL(named: account.snapshotFileName)
         let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
-        let wasAlreadyActive = currentAuth?.fingerprint == account.fingerprint
+
+        // Before we overwrite ~/.codex/auth.json, copy whatever Codex App has
+        // most recently written there back into the matching saved snapshot.
+        // Otherwise the refresh token we hand back to that account next time
+        // will already have been rotated out by the server.
+        if let currentAuth {
+            _ = try? await syncLiveAuth.sync(
+                liveMetadata: currentAuth,
+                liveURL: installer.liveAuthFileURL,
+                manifest: &manifest
+            )
+        }
+
+        let wasAlreadyActive: Bool = {
+            guard let live = currentAuth else { return false }
+            return manifest.accounts.first(where: { $0.id == account.id })?.fingerprint == live.fingerprint
+        }()
+
+        let snapshotURL = repository.snapshotURL(named: account.snapshotFileName)
 
         if !wasAlreadyActive {
             do {

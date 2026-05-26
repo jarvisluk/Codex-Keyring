@@ -21,8 +21,7 @@ public struct MenuBarView: View {
             Divider()
 
             Button("Open Manager") {
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
+                openManagerWindow()
             }
 
             Button("Add Current Login") {
@@ -47,7 +46,7 @@ public struct MenuBarView: View {
 
             Toggle("Restart Codex App on Switch", isOn: Binding(
                 get: { store.settings.restartCodexAppAfterSwitch },
-                set: { store.settings.restartCodexAppAfterSwitch = $0 }
+                set: { store.setRestartCodexAppAfterSwitch($0) }
             ))
 
             SettingsLink {
@@ -63,5 +62,18 @@ public struct MenuBarView: View {
     private func menuTitle(for account: CodexAccount) -> String {
         let title = account.alias.isEmpty ? account.displayEmail : account.alias
         return title.count > 30 ? String(title.prefix(27)) + "..." : title
+    }
+
+    private func openManagerWindow() {
+        if let existing = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
+            if existing.isMiniaturized {
+                existing.deminiaturize(nil)
+            }
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        openWindow(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
     }
 }

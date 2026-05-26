@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Codex Keyring}",
+            "name": "Debug CodexAccountSwitcher",
+            "target": "CodexAccountSwitcher",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug CodexAccountSwitcher"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Codex Keyring}",
+            "name": "Release CodexAccountSwitcher",
+            "target": "CodexAccountSwitcher",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release CodexAccountSwitcher"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Codex Keyring}",
+            "name": "Debug CodexKeyring",
+            "target": "CodexKeyring",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug CodexKeyring"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Codex Keyring}",
+            "name": "Release CodexKeyring",
+            "target": "CodexKeyring",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release CodexKeyring"
+        }
+    ]
+}

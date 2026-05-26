@@ -10,15 +10,10 @@ public struct MenuBarView: View {
 
     public var body: some View {
         VStack {
-            if let active = store.activeAccount {
-                Label(active.displayName, systemImage: "checkmark.circle.fill")
-                Text(active.displayEmail)
-                    .foregroundStyle(.secondary)
-            } else {
+            if store.activeAccount == nil {
                 Label("No active saved account", systemImage: "person.crop.circle.badge.questionmark")
+                Divider()
             }
-
-            Divider()
 
             Button("Open Manager") {
                 openManagerWindow()
@@ -34,13 +29,33 @@ public struct MenuBarView: View {
             }
             .disabled(store.isRefreshInProgress)
 
+            Button("Refresh Quotas") {
+                store.refreshQuotasNow()
+            }
+            .disabled(!store.settings.allowNetworkQuotaAPIs || store.isQuotaRefreshInProgress)
+
             if !store.accounts.isEmpty {
                 Divider()
                 ForEach(store.accounts) { account in
-                    Button(menuTitle(for: account)) {
+                    let isActive = store.activeAccount?.id == account.id
+                    Button {
+                        guard !isActive else { return }
                         store.switchTo(account, restartCodexApp: true)
+                    } label: {
+                        Label {
+                            Text(menuTitle(for: account))
+                        } icon: {
+                            Image(systemName: isActive ? "checkmark.circle.fill" : "person.crop.circle")
+                                .foregroundStyle(isActive ? .green : .secondary)
+                        }
                     }
-                    .disabled(store.activeAccount?.id == account.id)
+
+                    if let quotaState = store.quotaStates[account.id],
+                       let quotaLine = quotaState.menuDetailSummary {
+                        Text(quotaLine)
+                            .font(.caption)
+                            .foregroundStyle(quotaState.health.tint)
+                    }
                 }
             }
 

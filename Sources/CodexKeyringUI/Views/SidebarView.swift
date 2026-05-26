@@ -9,7 +9,11 @@ struct SidebarView: View {
         List(selection: $selection) {
             Section("Accounts") {
                 ForEach(store.accounts) { account in
-                    AccountRow(account: account, isActive: store.activeAccount?.id == account.id)
+                    AccountRow(
+                        account: account,
+                        isActive: store.activeAccount?.id == account.id,
+                        quotaState: store.quotaStates[account.id]
+                    )
                         .tag(account.id)
                 }
             }
@@ -126,6 +130,7 @@ private struct CurrentAuthFooter: View {
 private struct AccountRow: View {
     var account: CodexAccount
     var isActive: Bool
+    var quotaState: AccountQuotaState?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -140,6 +145,12 @@ private struct AccountRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if let quota = quotaState?.sidebarSummary {
+                    Label(quota, systemImage: quotaState?.health.systemImage ?? "gauge.medium")
+                        .font(.caption2)
+                        .foregroundStyle(quotaState?.health.tint ?? .secondary)
+                        .lineLimit(1)
+                }
             }
         }
         .padding(.vertical, 3)

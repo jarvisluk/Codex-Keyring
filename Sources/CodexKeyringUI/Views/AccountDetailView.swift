@@ -18,6 +18,7 @@ struct AccountDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 actions
+                quota
                 metadata
                 safety
             }
@@ -118,6 +119,142 @@ struct AccountDetailView: View {
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var quota: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Quota", systemImage: "gauge.medium")
+                    .font(.headline)
+                Spacer()
+                Button {
+                    store.refreshQuotasNow()
+                } label: {
+                    Label("Refresh Quotas", systemImage: "arrow.clockwise")
+                }
+                .disabled(!store.settings.allowNetworkQuotaAPIs || store.isQuotaRefreshInProgress)
+            }
+
+            if !store.settings.allowNetworkQuotaAPIs {
+                Text("Network quota API calls are disabled in Settings.")
+                    .foregroundStyle(.secondary)
+            } else if let state = store.quotaStates[account.id] {
+                quotaStateContent(state)
+            } else {
+                Text("Quota has not been refreshed yet.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    @ViewBuilder
+    private func quotaStateContent(_ state: AccountQuotaState) -> some View {
+        switch state.phase {
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Refreshing quota...")
+                    .foregroundStyle(.secondary)
+            }
+        case .unsupported, .error:
+            Label(state.message ?? state.health.label, systemImage: state.health.systemImage)
+                .foregroundStyle(state.health.tint)
+        case .available, .idle:
+            if let snapshot = state.snapshot {
+                quotaSnapshot(snapshot)
+            } else {
+                Text(state.message ?? "Quota unavailable.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func quotaSnapshot(_ snapshot: AccountQuotaSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let primary = snapshot.primaryBucket {
+                quotaBucket(primary, prominent: true)
+            }
+
+            let additional = snapshot.buckets.filter { $0.id != snapshot.primaryBucket?.id }
+            if !additional.isEmpty {
+                Divider()
+                ForEach(additional) { bucket in
+                    quotaBucket(bucket, prominent: false)
+                }
+            }
+
+            Text("Last checked \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func quotaBucket(_ bucket: QuotaBucket, prominent: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label(bucket.displayName, systemImage: bucket.health.systemImage)
+                    .foregroundStyle(bucket.health.tint)
+                    .font(prominent ? .headline : .subheadline.weight(.semibold))
+                Spacer()
+                Text(bucket.health.label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(bucket.health.tint)
+            }
+
+            if let planType = bucket.planType, !planType.isEmpty {
+                Text("Plan: \(planType)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(Array(bucket.windows.enumerated()), id: \.offset) { _, window in
+                quotaWindow(window)
+            }
+
+            if bucket.isUnlimited {
+                Label("Quota: unlimited", systemImage: "infinity")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let credits = bucket.credits {
+                quotaCredits(credits)
+            }
+        }
+    }
+
+    private func quotaWindow(_ window: QuotaWindow) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(window.durationLabel)
+                Spacer()
+                Text("\(window.formattedRemaining) left")
+                    .foregroundStyle(window.remainingPercent <= 15 ? .orange : .secondary)
+            }
+            .font(.caption)
+
+            ProgressView(value: window.remainingPercent, total: 100)
+                .tint(window.remainingPercent <= 5 ? .red : window.remainingPercent <= 15 ? .orange : .green)
+
+            Text(window.formattedReset)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func quotaCredits(_ credits: QuotaCredits) -> some View {
+        if credits.hasCredits {
+            let label = credits.unlimited
+                ? "Credits: unlimited"
+                : "Credits: \(credits.balance ?? "unknown")"
+            Label(label, systemImage: credits.isDepleted ? "creditcard.trianglebadge.exclamationmark" : "creditcard")
+                .font(.caption)
+                .foregroundStyle(credits.isDepleted ? .red : .secondary)
+        }
     }
 
     private func formatDate(_ date: Date) -> String {

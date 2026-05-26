@@ -33,7 +33,9 @@ public final class AccountStore: ObservableObject {
     @Published public private(set) var currentAuthMetadata: AuthMetadata?
     @Published public private(set) var isRefreshInProgress = false
     @Published public private(set) var isLoginInProgress = false
+    @Published public private(set) var isQuotaRefreshInProgress = false
     @Published public private(set) var settings = AppSettings()
+    @Published public private(set) var quotaStates: [UUID: AccountQuotaState] = [:]
     @Published public var statusMessage: String = "Ready."
     @Published public var lastError: String?
 
@@ -54,6 +56,9 @@ public final class AccountStore: ObservableObject {
     private let updateSettings: UpdateSettingsUseCase
     private let loginNewAccount: LoginNewAccountUseCase
     private let syncLiveAuthUseCase: SyncLiveAuthUseCase
+    private let refreshAccountQuotas: RefreshAccountQuotasUseCase
+    private var quotaRefreshTask: Task<Void, Never>?
+    private var quotaRefreshConfiguration: QuotaRefreshConfiguration?
 
     public init(
         repository: any AccountRepository,
@@ -63,6 +68,7 @@ public final class AccountStore: ObservableObject {
         launchAtLoginController: any LaunchAtLoginControlling,
         loginService: any CodexLoginServicing,
         agentPreferencesPort: any CodexAgentPreferencesPorting = NoopCodexAgentPreferencesPort(),
+        quotaQuery: any AccountQuotaQuerying = NoopAccountQuotaQuery(),
         storageLocations: AccountStorageLocations,
         openAuthURL: @escaping @Sendable (URL) async throws -> Void,
         logService: (any AppLogService)? = nil,
@@ -116,6 +122,11 @@ public final class AccountStore: ObservableObject {
             installer: installer,
             authReader: authReader
         )
+        self.refreshAccountQuotas = RefreshAccountQuotasUseCase(
+            repository: repository,
+            installer: installer,
+            query: quotaQuery
+        )
         self.settings.launchAtLogin = launchAtLoginController.isEnabled
         logService?.info("AccountStore initialised; launch-at-login supported=\(launchAtLoginController.isSupported)")
         refresh()
@@ -123,6 +134,7 @@ public final class AccountStore: ObservableObject {
     }
 
     deinit {
+        quotaRefreshTask?.cancel()
         liveAuthWatcher.stop()
     }
 
@@ -278,6 +290,15 @@ public final class AccountStore: ObservableObject {
         }
     }
 
+    public func setQuotaRefreshIntervalMinutes(_ minutes: Int) {
+        run {
+            let settings = try await self.updateSettings.setQuotaRefreshIntervalMinutes(minutes)
+            self.apply(settings)
+            self.statusMessage = "Quota refresh interval set to every \(settings.quotaRefreshIntervalMinutes) minutes."
+            self.logService?.info("setting quotaRefreshIntervalMinutes=\(settings.quotaRefreshIntervalMinutes)")
+        }
+    }
+
     public func setPreserveAgentPreferencesPerAccount(_ enabled: Bool) {
         run {
             let settings = try await self.updateSettings.setPreserveAgentPreferencesPerAccount(enabled)
@@ -306,6 +327,39 @@ public final class AccountStore: ObservableObject {
 
     public func clearError() {
         lastError = nil
+    }
+
+    // MARK: - Quota
+
+    public func refreshQuotasNow() {
+        guard settings.allowNetworkQuotaAPIs else {
+            quotaStates = [:]
+            statusMessage = "Network quota API calls are disabled."
+            return
+        }
+        guard !isQuotaRefreshInProgress else { return }
+
+        isQuotaRefreshInProgress = true
+        statusMessage = "Refreshing account quotas..."
+        let chatGPTAccountIDs = accounts
+            .filter { $0.authMode == "chatgpt" }
+            .map(\.id)
+        for accountID in chatGPTAccountIDs {
+            quotaStates[accountID] = .loading(accountID: accountID)
+        }
+
+        run {
+            defer { self.isQuotaRefreshInProgress = false }
+            self.logService?.debug("refreshing account quotas")
+            let result = try await self.refreshAccountQuotas()
+            self.accounts = result.accounts
+            self.quotaStates = result.states
+            let successfulCount = result.states.values.filter { $0.phase == .available }.count
+            self.statusMessage = "Refreshed quota for \(successfulCount) account\(successfulCount == 1 ? "" : "s")."
+            self.logService?.info("quota refresh complete; accounts=\(result.states.count), successful=\(successfulCount)")
+        } onFailure: {
+            self.isQuotaRefreshInProgress = false
+        }
     }
 
     // MARK: - Live auth watcher
@@ -398,9 +452,11 @@ public final class AccountStore: ObservableObject {
     }
 
     private func apply(_ settings: AppSettings) {
+        let previous = self.settings
         var resolved = settings
         resolved.launchAtLogin = launchAtLoginController.isEnabled
         self.settings = resolved
+        configureQuotaRefresh(previous: previous, current: resolved)
     }
 
     private func switchMessage(
@@ -443,4 +499,39 @@ public final class AccountStore: ObservableObject {
     private func isStableAccountIdentifier(_ identifier: String) -> Bool {
         !identifier.isEmpty && identifier != "api-key"
     }
+
+    private func configureQuotaRefresh(previous: AppSettings, current: AppSettings) {
+        let configuration = QuotaRefreshConfiguration(
+            enabled: current.allowNetworkQuotaAPIs,
+            intervalMinutes: current.quotaRefreshIntervalMinutes
+        )
+        guard quotaRefreshConfiguration != configuration else { return }
+
+        quotaRefreshConfiguration = configuration
+        quotaRefreshTask?.cancel()
+        quotaRefreshTask = nil
+
+        guard configuration.enabled else {
+            quotaStates = [:]
+            return
+        }
+
+        quotaRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let seconds = UInt64(max(1, configuration.intervalMinutes) * 60)
+                try? await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+                if Task.isCancelled { break }
+                self?.refreshQuotasNow()
+            }
+        }
+
+        if !previous.allowNetworkQuotaAPIs {
+            refreshQuotasNow()
+        }
+    }
+}
+
+private struct QuotaRefreshConfiguration: Equatable {
+    var enabled: Bool
+    var intervalMinutes: Int
 }

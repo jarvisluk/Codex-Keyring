@@ -79,6 +79,7 @@ private extension CodexKeyringApp {
             launchAtLoginController: SMAppServiceLaunchAtLogin(),
             loginService: ChatGPTOAuthLoginService(),
             agentPreferencesPort: agentPreferencesPort,
+            quotaQuery: ChatGPTQuotaClient(),
             storageLocations: AccountStorageLocations(
                 codexAuthPath: AppPaths.codexAuthFile.path,
                 applicationSupportPath: AppPaths.applicationSupportDirectory.path,

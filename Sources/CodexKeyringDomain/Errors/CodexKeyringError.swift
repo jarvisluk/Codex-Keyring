@@ -13,6 +13,8 @@ public enum CodexKeyringError: Error, Equatable, Sendable {
     case codexAppBundleNotFound(path: String)
     case codexLoginFailed(reason: String)
     case codexLoginUnexpectedResponse(reason: String)
+    case quotaQueryFailed(reason: String)
+    case quotaRequiresRelogin(reason: String)
 }
 
 extension CodexKeyringError: LocalizedError {
@@ -42,6 +44,10 @@ extension CodexKeyringError: LocalizedError {
             return "Codex login failed: \(reason)"
         case .codexLoginUnexpectedResponse(let reason):
             return "Codex login returned an unexpected response: \(reason)"
+        case .quotaQueryFailed(let reason):
+            return "Could not read Codex quota: \(reason)"
+        case .quotaRequiresRelogin(let reason):
+            return "Codex quota requires signing in again: \(reason)"
         }
     }
 }

@@ -16,6 +16,10 @@ public struct UpdateSettingsUseCase: Sendable {
         try await mutate { $0.allowNetworkQuotaAPIs = value }
     }
 
+    public func setQuotaRefreshIntervalMinutes(_ value: Int) async throws -> AppSettings {
+        try await mutate { $0.quotaRefreshIntervalMinutes = AppSettings.normalizedQuotaRefreshInterval(value) }
+    }
+
     public func setLaunchAtLogin(_ value: Bool) async throws -> AppSettings {
         try await mutate { $0.launchAtLogin = value }
     }

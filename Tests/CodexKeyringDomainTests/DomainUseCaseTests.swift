@@ -508,6 +508,22 @@ final class DomainUseCaseTests: XCTestCase {
         XCTAssertTrue(defaults.preserveAgentPreferencesPerAccount)
     }
 
+    func testAppSettingsDefaultsQuotaRefreshInterval() {
+        let defaults = AppSettings()
+        XCTAssertEqual(defaults.quotaRefreshIntervalMinutes, 15)
+    }
+
+    func testAppSettingsNormalizesQuotaRefreshInterval() throws {
+        let json = """
+        {
+          "allowNetworkQuotaAPIs": true,
+          "quotaRefreshIntervalMinutes": 7
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: json)
+        XCTAssertEqual(decoded.quotaRefreshIntervalMinutes, 15)
+    }
+
     func testAppSettingsDecodesMissingRestartAsTrue() throws {
         let json = "{}".data(using: .utf8)!
         let decoded = try JSONDecoder().decode(AppSettings.self, from: json)
@@ -537,6 +553,99 @@ final class DomainUseCaseTests: XCTestCase {
             "account"
         )
     }
+
+    func testRefreshAccountQuotasDoesNotQueryWhenNetworkAPIsDisabled() async throws {
+        let saved = account(id: UUID(), alias: "plus", metadata: metadata(email: "p@example.com", fingerprint: "p"))
+        let repository = InMemoryAccountRepository(
+            manifest: AccountManifest(accounts: [saved], activeAccountID: saved.id, settings: AppSettings())
+        )
+        let quotaQuery = MockQuotaQuery { request in
+            AccountQuotaQueryResult(state: .available(quotaSnapshot(accountID: request.account.id)))
+        }
+
+        let result = try await RefreshAccountQuotasUseCase(
+            repository: repository,
+            installer: MockInstaller(liveAuthFileURL: URL(fileURLWithPath: "/tmp/auth.json"), registry: AuthFileRegistry([:])),
+            query: quotaQuery
+        )()
+
+        XCTAssertTrue(result.states.isEmpty)
+        XCTAssertTrue(quotaQuery.requests.isEmpty)
+    }
+
+    func testRefreshAccountQuotasSkipsApiKeyAndKeepsOtherFailuresIsolated() async throws {
+        let good = account(id: UUID(), alias: "good", metadata: metadata(email: "good@example.com", fingerprint: "good"))
+        let apiMetadata = AuthMetadata(
+            email: "api",
+            plan: "API key",
+            authMode: "api-key",
+            accountIdentifier: "api-key",
+            fingerprint: "api",
+            tokenExpiresAt: nil
+        )
+        let api = account(id: UUID(), alias: "api", metadata: apiMetadata)
+        let failing = account(id: UUID(), alias: "failing", metadata: metadata(email: "fail@example.com", fingerprint: "fail"))
+        let settings = AppSettings(allowNetworkQuotaAPIs: true)
+        let repository = InMemoryAccountRepository(
+            manifest: AccountManifest(accounts: [good, api, failing], activeAccountID: good.id, settings: settings)
+        )
+        let quotaQuery = MockQuotaQuery { request in
+            if request.account.id == failing.id {
+                throw CodexKeyringError.quotaQueryFailed(reason: "network down")
+            }
+            return AccountQuotaQueryResult(state: .available(quotaSnapshot(accountID: request.account.id)))
+        }
+
+        let result = try await RefreshAccountQuotasUseCase(
+            repository: repository,
+            installer: MockInstaller(liveAuthFileURL: URL(fileURLWithPath: "/tmp/auth.json"), registry: AuthFileRegistry([:])),
+            query: quotaQuery,
+            clock: FixedClock(Date(timeIntervalSince1970: 123))
+        )()
+
+        XCTAssertEqual(quotaQuery.requests.map(\.account.id), [good.id, failing.id])
+        XCTAssertEqual(result.states[good.id]?.phase, .available)
+        XCTAssertEqual(result.states[api.id]?.phase, .unsupported)
+        XCTAssertEqual(result.states[failing.id]?.phase, .error)
+    }
+
+    func testRefreshAccountQuotasUpdatesManifestWhenTokenRefreshChangesMetadata() async throws {
+        let original = metadata(email: "old@example.com", fingerprint: "old")
+        let refreshed = AuthMetadata(
+            email: "new@example.com",
+            plan: "pro",
+            authMode: "chatgpt",
+            accountIdentifier: "account-new",
+            fingerprint: "new-fingerprint",
+            tokenExpiresAt: Date(timeIntervalSince1970: 456)
+        )
+        let saved = account(id: UUID(), alias: "saved", metadata: original)
+        let settings = AppSettings(allowNetworkQuotaAPIs: true)
+        let repository = InMemoryAccountRepository(
+            manifest: AccountManifest(accounts: [saved], activeAccountID: saved.id, settings: settings)
+        )
+        let quotaQuery = MockQuotaQuery { request in
+            AccountQuotaQueryResult(
+                state: .available(quotaSnapshot(accountID: request.account.id)),
+                updatedMetadata: refreshed
+            )
+        }
+
+        _ = try await RefreshAccountQuotasUseCase(
+            repository: repository,
+            installer: MockInstaller(liveAuthFileURL: URL(fileURLWithPath: "/tmp/auth.json"), registry: AuthFileRegistry([:])),
+            query: quotaQuery,
+            clock: FixedClock(Date(timeIntervalSince1970: 999))
+        )()
+
+        let manifest = try await repository.load()
+        let updated = try XCTUnwrap(manifest.accounts.first)
+        XCTAssertEqual(updated.email, "new@example.com")
+        XCTAssertEqual(updated.plan, "pro")
+        XCTAssertEqual(updated.accountIdentifier, "account-new")
+        XCTAssertEqual(updated.fingerprint, "new-fingerprint")
+        XCTAssertEqual(updated.updatedAt, Date(timeIntervalSince1970: 999))
+    }
 }
 
 private func metadata(email: String, fingerprint: String) -> AuthMetadata {
@@ -563,6 +672,32 @@ private func account(id: UUID, alias: String, metadata: AuthMetadata) -> CodexAc
         createdAt: Date(timeIntervalSince1970: 1),
         updatedAt: Date(timeIntervalSince1970: 1),
         tokenExpiresAt: nil
+    )
+}
+
+private func quotaSnapshot(accountID: UUID) -> AccountQuotaSnapshot {
+    AccountQuotaSnapshot(
+        accountID: accountID,
+        planType: "plus",
+        email: "person@example.com",
+        fetchedAt: Date(timeIntervalSince1970: 100),
+        buckets: [
+            QuotaBucket(
+                limitID: "codex",
+                limitName: nil,
+                planType: "plus",
+                windows: [
+                    QuotaWindow(
+                        usedPercent: 20,
+                        windowDurationMinutes: 5 * 60,
+                        resetsAt: Date(timeIntervalSince1970: 200)
+                    )
+                ],
+                credits: nil,
+                rateLimitReachedType: nil
+            )
+        ],
+        endpoint: "https://chatgpt.test/backend-api/wham/usage"
     )
 }
 
@@ -732,6 +867,25 @@ private final class MockAppController: CodexAppControlling, @unchecked Sendable 
         try await beforeRelaunch()
         lastBeforeRelaunchRan = true
         return outcome
+    }
+}
+
+private final class MockQuotaQuery: AccountQuotaQuerying, @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedRequests: [AccountQuotaQueryRequest] = []
+    private let handler: (AccountQuotaQueryRequest) async throws -> AccountQuotaQueryResult
+
+    init(handler: @escaping (AccountQuotaQueryRequest) async throws -> AccountQuotaQueryResult) {
+        self.handler = handler
+    }
+
+    var requests: [AccountQuotaQueryRequest] {
+        lock.withLock { recordedRequests }
+    }
+
+    func queryQuota(for request: AccountQuotaQueryRequest) async throws -> AccountQuotaQueryResult {
+        lock.withLock { recordedRequests.append(request) }
+        return try await handler(request)
     }
 }
 

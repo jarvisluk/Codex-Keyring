@@ -1,9 +1,12 @@
 import SwiftUI
+import CodexKeyringInfrastructure
 
-struct SettingsView: View {
+public struct SettingsView: View {
     @EnvironmentObject private var store: AccountStore
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         Form {
             Toggle("Restart Codex App after switching", isOn: Binding(
                 get: { store.settings.restartCodexAppAfterSwitch },

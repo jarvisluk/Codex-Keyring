@@ -1,10 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import CodexKeyringDomain
 
-struct ContentView: View {
+public struct ContentView: View {
+    public init() {}
     @EnvironmentObject private var store: AccountStore
     @SceneStorage("selectedAccountID") private var selectedAccountIDString: String?
-    @State private var showingAddCurrentSheet = false
 
     private var selectedAccountID: Binding<UUID?> {
         Binding {
@@ -23,7 +24,7 @@ struct ContentView: View {
         return store.activeAccount ?? store.accounts.first
     }
 
-    var body: some View {
+    public var body: some View {
         NavigationSplitView {
             SidebarView(selection: selectedAccountID)
         } detail: {
@@ -36,10 +37,12 @@ struct ContentView: View {
         .toolbar {
             ToolbarItemGroup {
                 Button {
-                    showingAddCurrentSheet = true
+                    store.loginNewCodexAccount()
                 } label: {
-                    Label("Add Current", systemImage: "plus.circle")
+                    Label("Add Login", systemImage: store.isLoginInProgress ? "hourglass" : "plus.circle")
                 }
+                .disabled(store.isLoginInProgress)
+                .help("Open Codex login and save the new account without switching the current auth.")
 
                 Button {
                     importAuthFile()
@@ -53,10 +56,6 @@ struct ContentView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
             }
-        }
-        .sheet(isPresented: $showingAddCurrentSheet) {
-            AddCurrentAccountSheet()
-                .environmentObject(store)
         }
         .alert("Action failed", isPresented: Binding(
             get: { store.lastError != nil },
@@ -91,7 +90,7 @@ private struct EmptyAccountsView: View {
                 .foregroundStyle(.secondary)
             Text("No saved accounts")
                 .font(.title2)
-            Text("Add the current Codex login or import an auth.json snapshot to begin.")
+            Text("Add a Codex login or import an auth.json snapshot to begin.")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct AddCurrentAccountSheet: View {
+    // module-internal; rendered by ContentView
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: AccountStore
     @State private var alias = ""

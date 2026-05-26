@@ -9,12 +9,40 @@ let package = Package(
     products: [
         .executable(
             name: "CodexKeyring",
-            targets: ["CodexKeyring"]
+            targets: ["CodexKeyringApp"]
         )
     ],
     targets: [
         .executableTarget(
-            name: "CodexKeyring"
+            name: "CodexKeyringApp",
+            dependencies: [
+                "CodexKeyringUI",
+                "CodexKeyringInfrastructure"
+            ]
+        ),
+        .target(
+            name: "CodexKeyringUI",
+            dependencies: [
+                "CodexKeyringDomain",
+                "CodexKeyringInfrastructure"
+            ]
+        ),
+        .target(
+            name: "CodexKeyringInfrastructure",
+            dependencies: [
+                "CodexKeyringDomain"
+            ]
+        ),
+        .target(
+            name: "CodexKeyringDomain"
+        ),
+        .testTarget(
+            name: "CodexKeyringDomainTests",
+            dependencies: ["CodexKeyringDomain"]
+        ),
+        .testTarget(
+            name: "CodexKeyringInfrastructureTests",
+            dependencies: ["CodexKeyringInfrastructure"]
         )
     ]
 )

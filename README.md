@@ -5,6 +5,8 @@ manager window, a persistent menu bar item, and local-only account snapshots.
 
 ## What It Does
 
+- Opens a Codex ChatGPT login flow from the add button and saves the resulting
+  auth snapshot locally without switching the active `~/.codex/auth.json`.
 - Saves the current `~/.codex/auth.json` as a named local account snapshot.
 - Imports another Codex `auth.json` snapshot from disk.
 - Lists, renames, removes, and switches saved accounts.
@@ -42,9 +44,10 @@ The Codex app Run action is wired in `.codex/environments/environment.toml`.
 
 ## Safe Basic Workflow
 
-1. Log in to Codex normally with `codex login`.
-2. Open this app and choose `Add Current`.
-3. Repeat `codex login` for another account, then choose `Add Current` again.
+1. Click the add button to open the Codex ChatGPT login page.
+2. Complete login in the browser. The new auth snapshot is saved under this
+   app's Application Support folder, while the current Codex auth is restored.
+3. Repeat the add flow for another account or import an existing auth snapshot.
 4. Switch accounts from the manager window or menu bar.
 5. Use `Switch and Restart Codex App` when the desktop Codex app is already
    open and should reload the changed auth state.

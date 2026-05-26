@@ -1,32 +1,57 @@
 import Foundation
 import ServiceManagement
+import os
+import CodexKeyringDomain
 
-enum LaunchAtLoginController {
-    static var isSupported: Bool {
-        if #available(macOS 13.0, *) {
-            return true
-        }
+public struct SMAppServiceLaunchAtLogin: LaunchAtLoginControlling {
+    private let log = CodexKeyringLog.make(.launchAtLogin)
+
+    public init() {}
+
+    public var isSupported: Bool {
+        if #available(macOS 13.0, *) { return true }
         return false
     }
 
-    static var isEnabled: Bool {
+    public var isEnabled: Bool {
         if #available(macOS 13.0, *) {
             return SMAppService.mainApp.status == .enabled
         }
         return false
     }
 
-    static func setEnabled(_ enabled: Bool) throws {
+    public func setEnabled(_ enabled: Bool) throws {
         guard #available(macOS 13.0, *) else {
-            return
+            throw CodexKeyringError.launchAtLoginUnsupported
         }
-
-        if enabled {
-            if SMAppService.mainApp.status != .enabled {
-                try SMAppService.mainApp.register()
+        do {
+            if enabled {
+                if SMAppService.mainApp.status != .enabled {
+                    try SMAppService.mainApp.register()
+                    log.info("launch-at-login registered")
+                }
+            } else if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+                log.info("launch-at-login unregistered")
             }
-        } else if SMAppService.mainApp.status == .enabled {
-            try SMAppService.mainApp.unregister()
+        } catch {
+            log.error("launch-at-login change failed: \(String(describing: error), privacy: .public)")
+            throw CodexKeyringError.launchAtLoginFailed(reason: error.localizedDescription)
         }
+    }
+}
+
+/// Legacy facade preserved during migration.
+public enum LaunchAtLoginController {
+    public static var isSupported: Bool {
+        SMAppServiceLaunchAtLogin().isSupported
+    }
+
+    public static var isEnabled: Bool {
+        SMAppServiceLaunchAtLogin().isEnabled
+    }
+
+    public static func setEnabled(_ enabled: Bool) throws {
+        try SMAppServiceLaunchAtLogin().setEnabled(enabled)
     }
 }

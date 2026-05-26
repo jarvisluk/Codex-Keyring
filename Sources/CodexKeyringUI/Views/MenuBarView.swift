@@ -1,11 +1,14 @@
 import AppKit
 import SwiftUI
+import CodexKeyringDomain
 
-struct MenuBarView: View {
+public struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var store: AccountStore
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         VStack {
             if let active = store.activeAccount {
                 Label(active.displayName, systemImage: "checkmark.circle.fill")

@@ -1,4 +1,6 @@
 import SwiftUI
+import CodexKeyringDomain
+import CodexKeyringInfrastructure
 
 struct SidebarView: View {
     @EnvironmentObject private var store: AccountStore

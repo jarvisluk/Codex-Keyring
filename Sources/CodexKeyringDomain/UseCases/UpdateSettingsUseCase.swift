@@ -20,6 +20,10 @@ public struct UpdateSettingsUseCase: Sendable {
         try await mutate { $0.launchAtLogin = value }
     }
 
+    public func setPreserveAgentPreferencesPerAccount(_ value: Bool) async throws -> AppSettings {
+        try await mutate { $0.preserveAgentPreferencesPerAccount = value }
+    }
+
     private func mutate(_ change: (inout AppSettings) -> Void) async throws -> AppSettings {
         var manifest = try await repository.load()
         change(&manifest.settings)

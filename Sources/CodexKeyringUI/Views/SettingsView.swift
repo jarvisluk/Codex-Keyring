@@ -9,16 +9,22 @@ public struct SettingsView: View {
 
     public var body: some View {
         Form {
-            Toggle("Restart Codex App after switching", isOn: Binding(
-                get: { store.settings.restartCodexAppAfterSwitch },
-                set: { store.setRestartCodexAppAfterSwitch($0) }
-            ))
-
             Toggle("Launch at login", isOn: Binding(
                 get: { store.settings.launchAtLogin },
                 set: { store.setLaunchAtLogin($0) }
             ))
             .disabled(!store.isLaunchAtLoginSupported)
+
+            Toggle("Remember per-account agent settings", isOn: Binding(
+                get: { store.settings.preserveAgentPreferencesPerAccount },
+                set: { store.setPreserveAgentPreferencesPerAccount($0) }
+            ))
+
+            Text("When switching accounts, Codex Keyring restarts Codex App, captures the outgoing account's model, reasoning effort, approval/sandbox mode, and Full Access / Auto Review setting, and applies the incoming account's saved values while Codex App is stopped.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             Toggle("Allow network quota/account API calls", isOn: Binding(
                 get: { store.settings.allowNetworkQuotaAPIs },

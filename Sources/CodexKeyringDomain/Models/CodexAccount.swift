@@ -12,6 +12,10 @@ public struct CodexAccount: Identifiable, Codable, Hashable, Sendable {
     public var createdAt: Date
     public var updatedAt: Date
     public var tokenExpiresAt: Date?
+    /// Per-account Codex agent preferences (model / effort / approval / sandbox
+    /// / agent-mode / skip-confirm). Optional so existing accounts decoded from
+    /// older manifests still parse.
+    public var agentPreferences: AccountAgentPreferences?
 
     public init(
         id: UUID,
@@ -24,7 +28,8 @@ public struct CodexAccount: Identifiable, Codable, Hashable, Sendable {
         fingerprint: String,
         createdAt: Date,
         updatedAt: Date,
-        tokenExpiresAt: Date?
+        tokenExpiresAt: Date?,
+        agentPreferences: AccountAgentPreferences? = nil
     ) {
         self.id = id
         self.alias = alias
@@ -37,6 +42,7 @@ public struct CodexAccount: Identifiable, Codable, Hashable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.tokenExpiresAt = tokenExpiresAt
+        self.agentPreferences = agentPreferences
     }
 
     public var shortFingerprint: String {

@@ -27,27 +27,24 @@ public struct MenuBarView: View {
             Button("Add Current Login") {
                 store.addCurrentAccount(alias: nil)
             }
+            .disabled(!store.canSaveCurrentAuth)
 
             Button("Refresh") {
                 store.refresh()
             }
+            .disabled(store.isRefreshInProgress)
 
             if !store.accounts.isEmpty {
                 Divider()
                 ForEach(store.accounts) { account in
                     Button(menuTitle(for: account)) {
-                        store.switchTo(account, restartCodexApp: store.settings.restartCodexAppAfterSwitch)
+                        store.switchTo(account, restartCodexApp: true)
                     }
                     .disabled(store.activeAccount?.id == account.id)
                 }
             }
 
             Divider()
-
-            Toggle("Restart Codex App on Switch", isOn: Binding(
-                get: { store.settings.restartCodexAppAfterSwitch },
-                set: { store.setRestartCodexAppAfterSwitch($0) }
-            ))
 
             SettingsLink {
                 Text("Settings")

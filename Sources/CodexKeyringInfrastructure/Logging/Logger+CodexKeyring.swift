@@ -11,6 +11,7 @@ public enum LoggerCategory: String, Sendable {
     case oauth
     case app
     case settings
+    case agentPrefs
 }
 
 public enum CodexKeyringLog {

@@ -12,6 +12,7 @@ public struct LoginNewAccountUseCase: Sendable {
     private let installer: any CodexAuthInstalling
     private let authReader: any AuthFileReading
     private let loginService: any CodexLoginServicing
+    private let preferencesPort: any CodexAgentPreferencesPorting
     private let clock: any Clock
     private let aliasPolicy: AliasPolicy
 
@@ -20,6 +21,7 @@ public struct LoginNewAccountUseCase: Sendable {
         installer: any CodexAuthInstalling,
         authReader: any AuthFileReading,
         loginService: any CodexLoginServicing,
+        preferencesPort: any CodexAgentPreferencesPorting = NoopCodexAgentPreferencesPort(),
         clock: any Clock = SystemClock(),
         aliasPolicy: AliasPolicy = AliasPolicy()
     ) {
@@ -27,6 +29,7 @@ public struct LoginNewAccountUseCase: Sendable {
         self.installer = installer
         self.authReader = authReader
         self.loginService = loginService
+        self.preferencesPort = preferencesPort
         self.clock = clock
         self.aliasPolicy = aliasPolicy
     }
@@ -48,6 +51,7 @@ public struct LoginNewAccountUseCase: Sendable {
                 repository: repository,
                 installer: installer,
                 authReader: authReader,
+                preferencesPort: preferencesPort,
                 clock: clock,
                 aliasPolicy: aliasPolicy
             )(

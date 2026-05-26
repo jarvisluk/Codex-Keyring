@@ -72,7 +72,9 @@ public struct NSWorkspaceCodexAppController: CodexAppControlling {
         !environment.runningCodexApps().isEmpty
     }
 
-    public func restartIfRunning() async throws -> CodexAppRestartOutcome {
+    public func restartIfRunning(
+        beforeRelaunch: @Sendable () async throws -> Void = {}
+    ) async throws -> CodexAppRestartOutcome {
         let initial = environment.runningCodexApps()
         guard !initial.isEmpty else {
             log.debug("codex app not running; no restart required")
@@ -81,6 +83,15 @@ public struct NSWorkspaceCodexAppController: CodexAppControlling {
 
         log.info("terminating \(initial.count) codex app process(es)")
         try await terminate(initial)
+
+        // Run the caller-supplied hook (e.g. rewriting Codex state files)
+        // BEFORE the bundle check so the hook still runs even when the
+        // bundle has been moved/removed since launch.
+        do {
+            try await beforeRelaunch()
+        } catch {
+            throw CodexKeyringError.codexAppRelaunchFailed(reason: "Pre-relaunch hook failed: \(error.localizedDescription)")
+        }
 
         guard environment.bundleExists(at: codexAppURL) else {
             log.warning("codex app bundle missing at \(self.codexAppURL.path)")

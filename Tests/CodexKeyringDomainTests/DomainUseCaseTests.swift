@@ -261,6 +261,269 @@ final class DomainUseCaseTests: XCTestCase {
         XCTAssertEqual(repository.snapshotWriteCount, 1)
     }
 
+    func testSwitchAccountCapturesOutgoingAndAppliesIncomingPreferencesWhenEnabled() async throws {
+        let oldMeta = metadata(email: "old@example.com", fingerprint: "old")
+        let newMeta = metadata(email: "new@example.com", fingerprint: "new")
+        let oldAccount = account(id: UUID(), alias: "old", metadata: oldMeta)
+        var newAccount = account(id: UUID(), alias: "new", metadata: newMeta)
+        // The incoming account already has a saved preferences snapshot we
+        // expect to be applied to the live Codex files.
+        newAccount.agentPreferences = AccountAgentPreferences(
+            model: "gpt-5.5",
+            modelReasoningEffort: "xhigh",
+            approvalPolicy: "never",
+            approvalsReviewer: "guardian_subagent",
+            sandboxMode: "workspace-write",
+            agentMode: "full-access",
+            skipFullAccessConfirm: true
+        )
+        let liveURL = URL(fileURLWithPath: "/tmp/live-auth.json")
+        let registry = AuthFileRegistry([liveURL: oldMeta])
+        let settings = AppSettings(
+            restartCodexAppAfterSwitch: true,
+            launchAtLogin: false,
+            allowNetworkQuotaAPIs: false,
+            preserveAgentPreferencesPerAccount: true
+        )
+        let repository = InMemoryAccountRepository(
+            manifest: AccountManifest(
+                accounts: [oldAccount, newAccount],
+                activeAccountID: oldAccount.id,
+                settings: settings
+            )
+        )
+        registry.set(newMeta, for: repository.snapshotURL(named: newAccount.snapshotFileName))
+        let installer = MockInstaller(liveAuthFileURL: liveURL, registry: registry)
+        let appController = MockAppController(outcome: .relaunched)
+        let outgoingCaptured = AccountAgentPreferences(
+            model: "gpt-5",
+            modelReasoningEffort: "medium",
+            agentMode: "auto-review"
+        )
+        let port = MockAgentPreferencesPort(captureValues: [outgoingCaptured])
+
+        let result = try await SwitchAccountUseCase(
+            repository: repository,
+            installer: installer,
+            authReader: MockAuthReader(registry: registry),
+            appController: appController,
+            preferencesPort: port
+        )(accountID: newAccount.id, restartCodexApp: true)
+
+        let saved = try await repository.load()
+        XCTAssertEqual(port.captureCallCount, 1)
+        XCTAssertEqual(port.applied.count, 1)
+        XCTAssertEqual(port.applied.first?.model, "gpt-5.5")
+        XCTAssertEqual(port.applied.first?.agentMode, "full-access")
+        XCTAssertEqual(port.applied.first?.skipFullAccessConfirm, true)
+        XCTAssertEqual(
+            saved.accounts.first(where: { $0.id == oldAccount.id })?.agentPreferences?.model,
+            "gpt-5"
+        )
+        XCTAssertEqual(
+            saved.accounts.first(where: { $0.id == oldAccount.id })?.agentPreferences?.agentMode,
+            "auto-review"
+        )
+        XCTAssertTrue(result.appliedAgentPreferences)
+        XCTAssertEqual(appController.restartCallCount, 1)
+        XCTAssertTrue(appController.lastBeforeRelaunchRan)
+    }
+
+    func testSwitchAccountDoesNotTouchPreferencesWhenFeatureOff() async throws {
+        let oldMeta = metadata(email: "old@example.com", fingerprint: "old")
+        let newMeta = metadata(email: "new@example.com", fingerprint: "new")
+        let oldAccount = account(id: UUID(), alias: "old", metadata: oldMeta)
+        var newAccount = account(id: UUID(), alias: "new", metadata: newMeta)
+        newAccount.agentPreferences = AccountAgentPreferences(model: "gpt-5.5")
+        let liveURL = URL(fileURLWithPath: "/tmp/live-auth.json")
+        let registry = AuthFileRegistry([liveURL: oldMeta])
+        // The feature defaults to ON now, so this test must opt out explicitly.
+        let settings = AppSettings(preserveAgentPreferencesPerAccount: false)
+        let repository = InMemoryAccountRepository(
+            manifest: AccountManifest(
+                accounts: [oldAccount, newAccount],
+                activeAccountID: oldAccount.id,
+                settings: settings
+            )
+        )
+        registry.set(newMeta, for: repository.snapshotURL(named: newAccount.snapshotFileName))
+        let port = MockAgentPreferencesPort()
+
+        let result = try await SwitchAccountUseCase(
+            repository: repository,
+            installer: MockInstaller(liveAuthFileURL: liveURL, registry: registry),
+            authReader: MockAuthReader(registry: registry),
+            appController: MockAppController(outcome: .relaunched),
+            preferencesPort: port
+        )(accountID: newAccount.id, restartCodexApp: true)
+
+        XCTAssertEqual(port.captureCallCount, 0)
+        XCTAssertEqual(port.applied.count, 0)
+        XCTAssertFalse(result.appliedAgentPreferences)
+    }
+
+    func testSwitchAccountRestoresProjectArrangementEvenWhenAgentPrefsOff() async throws {
+        let oldMeta = metadata(email: "old@example.com", fingerprint: "old")
+        let newMeta = metadata(email: "new@example.com", fingerprint: "new")
+        let oldAccount = account(id: UUID(), alias: "old", metadata: oldMeta)
+        let newAccount = account(id: UUID(), alias: "new", metadata: newMeta)
+        let liveURL = URL(fileURLWithPath: "/tmp/live-auth.json")
+        let registry = AuthFileRegistry([liveURL: oldMeta])
+        let settings = AppSettings(preserveAgentPreferencesPerAccount: false)
+        let repository = InMemoryAccountRepository(
+            manifest: AccountManifest(
+                accounts: [oldAccount, newAccount],
+                activeAccountID: oldAccount.id,
+                settings: settings
+            )
+        )
+        registry.set(newMeta, for: repository.snapshotURL(named: newAccount.snapshotFileName))
+        let arrangement = CodexProjectArrangement(
+            projectOrder: ["/before-a", "remote-before"],
+            pinnedProjectIDs: ["/before-a"],
+            sidebarOrganizeMode: "manual"
+        )
+        let port = MockAgentPreferencesPort(projectArrangement: arrangement)
+
+        let result = try await SwitchAccountUseCase(
+            repository: repository,
+            installer: MockInstaller(liveAuthFileURL: liveURL, registry: registry),
+            authReader: MockAuthReader(registry: registry),
+            appController: MockAppController(outcome: .relaunched),
+            preferencesPort: port
+        )(accountID: newAccount.id, restartCodexApp: true)
+
+        XCTAssertEqual(port.captureCallCount, 0)
+        XCTAssertEqual(port.applied.count, 0)
+        XCTAssertEqual(port.projectArrangementCaptureCallCount, 1)
+        XCTAssertEqual(port.restoredProjectArrangements, [arrangement])
+        XCTAssertFalse(result.appliedAgentPreferences)
+    }
+
+    func testSwitchAccountDoesNotApplyPreferencesWithoutRestart() async throws {
+        let oldMeta = metadata(email: "old@example.com", fingerprint: "old")
+        let newMeta = metadata(email: "new@example.com", fingerprint: "new")
+        let oldAccount = account(id: UUID(), alias: "old", metadata: oldMeta)
+        var newAccount = account(id: UUID(), alias: "new", metadata: newMeta)
+        newAccount.agentPreferences = AccountAgentPreferences(model: "gpt-5.5")
+        let liveURL = URL(fileURLWithPath: "/tmp/live-auth.json")
+        let registry = AuthFileRegistry([liveURL: oldMeta])
+        let settings = AppSettings(preserveAgentPreferencesPerAccount: true)
+        let repository = InMemoryAccountRepository(
+            manifest: AccountManifest(
+                accounts: [oldAccount, newAccount],
+                activeAccountID: oldAccount.id,
+                settings: settings
+            )
+        )
+        registry.set(newMeta, for: repository.snapshotURL(named: newAccount.snapshotFileName))
+        let port = MockAgentPreferencesPort(captureValues: [AccountAgentPreferences(model: "gpt-5")])
+
+        let result = try await SwitchAccountUseCase(
+            repository: repository,
+            installer: MockInstaller(liveAuthFileURL: liveURL, registry: registry),
+            authReader: MockAuthReader(registry: registry),
+            appController: MockAppController(outcome: .relaunched),
+            preferencesPort: port
+        )(accountID: newAccount.id, restartCodexApp: false)
+
+        // Without a restart the pref capture would race the running Codex App
+        // when it later quits, so we deliberately skip the whole orchestration.
+        XCTAssertEqual(port.captureCallCount, 0)
+        XCTAssertEqual(port.applied.count, 0)
+        XCTAssertFalse(result.appliedAgentPreferences)
+    }
+
+    func testSwitchAccountDoesNotStartCodexAppWhenNotRunning() async throws {
+        let oldMeta = metadata(email: "old@example.com", fingerprint: "old")
+        let newMeta = metadata(email: "new@example.com", fingerprint: "new")
+        let oldAccount = account(id: UUID(), alias: "old", metadata: oldMeta)
+        var newAccount = account(id: UUID(), alias: "new", metadata: newMeta)
+        newAccount.agentPreferences = AccountAgentPreferences(model: "gpt-5.5")
+        let liveURL = URL(fileURLWithPath: "/tmp/live-auth.json")
+        let registry = AuthFileRegistry([liveURL: oldMeta])
+        let settings = AppSettings(preserveAgentPreferencesPerAccount: true)
+        let repository = InMemoryAccountRepository(
+            manifest: AccountManifest(
+                accounts: [oldAccount, newAccount],
+                activeAccountID: oldAccount.id,
+                settings: settings
+            )
+        )
+        registry.set(newMeta, for: repository.snapshotURL(named: newAccount.snapshotFileName))
+        let appController = MockAppController(outcome: .relaunched)
+        appController.isRunning = false
+        let port = MockAgentPreferencesPort(captureValues: [AccountAgentPreferences(model: "gpt-5")])
+
+        let result = try await SwitchAccountUseCase(
+            repository: repository,
+            installer: MockInstaller(liveAuthFileURL: liveURL, registry: registry),
+            authReader: MockAuthReader(registry: registry),
+            appController: appController,
+            preferencesPort: port
+        )(accountID: newAccount.id, restartCodexApp: true)
+
+        XCTAssertEqual(result.restartOutcome, .wasNotRunning)
+        XCTAssertEqual(appController.restartCallCount, 0)
+        XCTAssertEqual(port.captureCallCount, 0)
+        XCTAssertEqual(port.applied.count, 0)
+        XCTAssertFalse(result.appliedAgentPreferences)
+        XCTAssertEqual(registry.metadata(for: liveURL)?.fingerprint, "new")
+    }
+
+    func testAppSettingsDecodesLegacyManifestWithoutPreserveAgentPrefs() throws {
+        let json = """
+        {
+          "restartCodexAppAfterSwitch": true,
+          "launchAtLogin": false,
+          "allowNetworkQuotaAPIs": false
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: json)
+        XCTAssertTrue(decoded.restartCodexAppAfterSwitch)
+        // Legacy manifests inherit the new default-on behavior.
+        XCTAssertTrue(decoded.preserveAgentPreferencesPerAccount)
+    }
+
+    func testAppSettingsHonoursExplicitlyDisabledPreserveAgentPrefs() throws {
+        let json = """
+        {
+          "restartCodexAppAfterSwitch": true,
+          "launchAtLogin": false,
+          "allowNetworkQuotaAPIs": false,
+          "preserveAgentPreferencesPerAccount": false
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: json)
+        XCTAssertFalse(decoded.preserveAgentPreferencesPerAccount)
+    }
+
+    func testAppSettingsDefaultsRestartCodexAppOn() {
+        let defaults = AppSettings()
+        XCTAssertTrue(defaults.restartCodexAppAfterSwitch)
+    }
+
+    func testAppSettingsDefaultsPreserveAgentPreferencesOn() {
+        let defaults = AppSettings()
+        XCTAssertTrue(defaults.preserveAgentPreferencesPerAccount)
+    }
+
+    func testAppSettingsDecodesMissingRestartAsTrue() throws {
+        let json = "{}".data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: json)
+        XCTAssertTrue(decoded.restartCodexAppAfterSwitch)
+    }
+
+    func testAppSettingsRespectsExplicitRestartFalse() throws {
+        let json = """
+        {
+          "restartCodexAppAfterSwitch": false
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: json)
+        XCTAssertFalse(decoded.restartCodexAppAfterSwitch)
+    }
+
     func testAliasPolicyFallsBackAndUniquifiesCaseInsensitively() {
         let policy = AliasPolicy()
 
@@ -453,14 +716,67 @@ private final class MockAppController: CodexAppControlling, @unchecked Sendable 
     var isRunning = true
     private let outcome: CodexAppRestartOutcome
     private(set) var restartCallCount = 0
+    private(set) var lastBeforeRelaunchRan = false
 
     init(outcome: CodexAppRestartOutcome) {
         self.outcome = outcome
     }
 
-    func restartIfRunning() async throws -> CodexAppRestartOutcome {
+    func restartIfRunning(
+        beforeRelaunch: @Sendable () async throws -> Void
+    ) async throws -> CodexAppRestartOutcome {
         restartCallCount += 1
+        if case .wasNotRunning = outcome {
+            return outcome
+        }
+        try await beforeRelaunch()
+        lastBeforeRelaunchRan = true
         return outcome
+    }
+}
+
+private final class MockAgentPreferencesPort: CodexAgentPreferencesPorting, @unchecked Sendable {
+    private let lock = NSLock()
+    private var captureValues: [AccountAgentPreferences]
+    private var projectArrangement: CodexProjectArrangement
+    private var captureIndex = 0
+    private(set) var captureCallCount = 0
+    private(set) var projectArrangementCaptureCallCount = 0
+    private(set) var applied: [AccountAgentPreferences] = []
+    private(set) var restoredProjectArrangements: [CodexProjectArrangement] = []
+
+    init(
+        captureValues: [AccountAgentPreferences] = [],
+        projectArrangement: CodexProjectArrangement = CodexProjectArrangement()
+    ) {
+        self.captureValues = captureValues
+        self.projectArrangement = projectArrangement
+    }
+
+    func captureCurrent() async throws -> AccountAgentPreferences {
+        lock.withLock {
+            captureCallCount += 1
+            guard captureIndex < captureValues.count else {
+                return AccountAgentPreferences()
+            }
+            defer { captureIndex += 1 }
+            return captureValues[captureIndex]
+        }
+    }
+
+    func apply(_ preferences: AccountAgentPreferences) async throws {
+        lock.withLock { applied.append(preferences) }
+    }
+
+    func captureProjectArrangement() async throws -> CodexProjectArrangement {
+        lock.withLock {
+            projectArrangementCaptureCallCount += 1
+            return projectArrangement
+        }
+    }
+
+    func restoreProjectArrangement(_ arrangement: CodexProjectArrangement) async throws {
+        lock.withLock { restoredProjectArrangements.append(arrangement) }
     }
 }
 

@@ -17,13 +17,22 @@ manager window, a persistent menu bar item, and local-only account snapshots.
 - Keeps saved snapshots under:
   `~/Library/Application Support/CodexKeyring/Accounts`.
 - Offers a menu bar item for quick switching and background use.
-- Can restart Codex App after switching so the desktop app can reload auth.
+- Restarts Codex App when switching so the desktop app can reload auth.
 - Includes Launch at Login support through macOS ServiceManagement.
 - Keeps each saved snapshot in lock-step with `~/.codex/auth.json` so the
   rotating OAuth refresh token never goes stale: whenever Codex App rewrites
   the live auth file, the app captures the new bytes back into the matching
   saved snapshot (and refuses to switch away from an account without first
   re-snapshotting its rotated token).
+- Remembers per-account Codex agent settings (model, reasoning effort,
+  approval/sandbox mode, Full Access / Auto Review, and the "skip
+  full-access confirm" toggle) and restores them on the next switch.
+  Enabled by default; toggle off from Settings → "Remember per-account
+  agent settings". The switch flow restarts Codex App so the rewrite of
+  `~/.codex/config.toml` and `~/.codex/.codex-global-state.json` happens
+  while Codex App is stopped.
+  Unrelated keys in those files (project trust levels, `[features]`,
+  workspace history, window bounds, etc.) are preserved byte-for-byte.
 
 The first version intentionally avoids quota/account API calls. The setting is
 visible but disabled until a future version explicitly implements it.
@@ -53,9 +62,8 @@ The Codex app Run action is wired in `.codex/environments/environment.toml`.
 2. Complete login in the browser. The new auth snapshot is saved under this
    app's Application Support folder, while the current Codex auth is restored.
 3. Repeat the add flow for another account or import an existing auth snapshot.
-4. Switch accounts from the manager window or menu bar.
-5. Use `Switch and Restart Codex App` when the desktop Codex app is already
-   open and should reload the changed auth state.
+4. Switch accounts from the manager window or menu bar. The switch also
+   restarts Codex App so it reloads the new auth state.
 
 ## Uninstall
 

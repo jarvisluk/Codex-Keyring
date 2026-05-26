@@ -39,7 +39,10 @@ public struct ContentView: View {
                 Button {
                     store.loginNewCodexAccount()
                 } label: {
-                    Label("Add Login", systemImage: store.isLoginInProgress ? "hourglass" : "plus.circle")
+                    ToolbarButtonLabel(
+                        "Add Login",
+                        systemImage: store.isLoginInProgress ? "hourglass" : "plus.circle"
+                    )
                 }
                 .disabled(store.isLoginInProgress)
                 .help("Open Codex login and save the new account without switching the current auth.")
@@ -47,14 +50,19 @@ public struct ContentView: View {
                 Button {
                     importAuthFile()
                 } label: {
-                    Label("Import", systemImage: "square.and.arrow.down")
+                    ToolbarButtonLabel("Import", systemImage: "square.and.arrow.down")
                 }
 
                 Button {
                     store.refresh()
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    ToolbarButtonLabel(
+                        "Refresh",
+                        systemImage: "arrow.clockwise",
+                        isLoading: store.isRefreshInProgress
+                    )
                 }
+                .disabled(store.isRefreshInProgress)
             }
         }
         .alert("Action failed", isPresented: Binding(
@@ -78,6 +86,34 @@ public struct ContentView: View {
         panel.canChooseDirectories = false
         if panel.runModal() == .OK, let url = panel.url {
             store.importAccount(from: url)
+        }
+    }
+}
+
+private struct ToolbarButtonLabel: View {
+    let title: String
+    let systemImage: String
+    let isLoading: Bool
+
+    init(_ title: String, systemImage: String, isLoading: Bool = false) {
+        self.title = title
+        self.systemImage = systemImage
+        self.isLoading = isLoading
+    }
+
+    var body: some View {
+        Label {
+            Text(title)
+        } icon: {
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: systemImage)
+                    .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(.primary)
+            }
         }
     }
 }

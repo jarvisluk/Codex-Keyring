@@ -31,6 +31,7 @@ public final class AccountStore: ObservableObject {
     @Published public private(set) var accounts: [CodexAccount] = []
     @Published public private(set) var activeAccountID: UUID?
     @Published public private(set) var currentAuthMetadata: AuthMetadata?
+    @Published public private(set) var isRefreshInProgress = false
     @Published public private(set) var isLoginInProgress = false
     @Published public private(set) var settings = AppSettings()
     @Published public var statusMessage: String = "Ready."
@@ -61,6 +62,7 @@ public final class AccountStore: ObservableObject {
         appController: any CodexAppControlling,
         launchAtLoginController: any LaunchAtLoginControlling,
         loginService: any CodexLoginServicing,
+        agentPreferencesPort: any CodexAgentPreferencesPorting = NoopCodexAgentPreferencesPort(),
         storageLocations: AccountStorageLocations,
         openAuthURL: @escaping @Sendable (URL) async throws -> Void,
         logService: (any AppLogService)? = nil,
@@ -81,13 +83,15 @@ public final class AccountStore: ObservableObject {
         self.addAccount = AddAccountUseCase(
             repository: repository,
             installer: installer,
-            authReader: authReader
+            authReader: authReader,
+            preferencesPort: agentPreferencesPort
         )
         self.switchAccount = SwitchAccountUseCase(
             repository: repository,
             installer: installer,
             authReader: authReader,
-            appController: appController
+            appController: appController,
+            preferencesPort: agentPreferencesPort
         )
         self.removeAccount = RemoveAccountUseCase(
             repository: repository,
@@ -104,7 +108,8 @@ public final class AccountStore: ObservableObject {
             repository: repository,
             installer: installer,
             authReader: authReader,
-            loginService: loginService
+            loginService: loginService,
+            preferencesPort: agentPreferencesPort
         )
         self.syncLiveAuthUseCase = SyncLiveAuthUseCase(
             repository: repository,
@@ -130,8 +135,30 @@ public final class AccountStore: ObservableObject {
         ).activeAccount
     }
 
+    public var savedAccountForCurrentAuth: CodexAccount? {
+        guard let currentAuthMetadata else { return nil }
+        if let exact = accounts.first(where: { $0.fingerprint == currentAuthMetadata.fingerprint }) {
+            return exact
+        }
+
+        let identifier = currentAuthMetadata.accountIdentifier
+        guard isStableAccountIdentifier(identifier) else { return nil }
+        return accounts.first { account in
+            account.accountIdentifier == identifier
+                && isStableAccountIdentifier(account.accountIdentifier)
+        }
+    }
+
+    public var canSaveCurrentAuth: Bool {
+        currentAuthMetadata != nil && savedAccountForCurrentAuth == nil
+    }
+
     public func refresh() {
+        guard !isRefreshInProgress else { return }
+        isRefreshInProgress = true
+        statusMessage = "Refreshing account state..."
         run {
+            defer { self.isRefreshInProgress = false }
             self.logService?.debug("refreshing account state")
             let state = try await self.refreshState()
             self.apply(state)
@@ -164,6 +191,11 @@ public final class AccountStore: ObservableObject {
     }
 
     public func addCurrentAccount(alias requestedAlias: String?) {
+        if let savedAccount = savedAccountForCurrentAuth {
+            statusMessage = "Current Codex auth is already saved as \(savedAccount.displayName)."
+            return
+        }
+
         logService?.info("adding current live auth (requestedAlias=\(requestedAlias ?? "<auto>"))")
         run {
             let result = try await self.addAccount(
@@ -243,6 +275,17 @@ public final class AccountStore: ObservableObject {
                 ? "Network quota API calls enabled."
                 : "Network quota API calls disabled."
             self.logService?.info("setting allowNetworkQuotaAPIs=\(enabled)")
+        }
+    }
+
+    public func setPreserveAgentPreferencesPerAccount(_ enabled: Bool) {
+        run {
+            let settings = try await self.updateSettings.setPreserveAgentPreferencesPerAccount(enabled)
+            self.apply(settings)
+            self.statusMessage = enabled
+                ? "Per-account agent settings will be remembered (requires restart Codex App on switch)."
+                : "Per-account agent settings disabled."
+            self.logService?.info("setting preserveAgentPreferencesPerAccount=\(enabled)")
         }
     }
 
@@ -364,16 +407,20 @@ public final class AccountStore: ObservableObject {
         for result: SwitchAccountResult,
         restartWasRequested: Bool
     ) -> String {
+        let base: String
         if let restartOutcome = result.restartOutcome {
-            return message(for: restartOutcome)
+            base = message(for: restartOutcome)
+        } else if result.wasAlreadyActive {
+            base = "\(result.switchedAlias) was already the active Codex auth."
+        } else if restartWasRequested {
+            base = "Switched Codex CLI auth to \(result.switchedAlias)."
+        } else {
+            base = "Switched Codex CLI auth to \(result.switchedAlias). Restart Codex App if it was already open."
         }
-        if result.wasAlreadyActive {
-            return "\(result.switchedAlias) was already the active Codex auth."
+        if result.appliedAgentPreferences {
+            return base + " Restored saved agent settings for this account."
         }
-        if restartWasRequested {
-            return "Switched Codex CLI auth to \(result.switchedAlias)."
-        }
-        return "Switched Codex CLI auth to \(result.switchedAlias). Restart Codex App if it was already open."
+        return base
     }
 
     private func message(for outcome: CodexAppRestartOutcome) -> String {
@@ -391,5 +438,9 @@ public final class AccountStore: ObservableObject {
         lastError = error.localizedDescription
         statusMessage = error.localizedDescription
         logService?.error("operation failed: \(error.localizedDescription)")
+    }
+
+    private func isStableAccountIdentifier(_ identifier: String) -> Bool {
+        !identifier.isEmpty && identifier != "api-key"
     }
 }

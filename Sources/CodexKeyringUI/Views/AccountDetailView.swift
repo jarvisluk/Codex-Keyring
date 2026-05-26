@@ -68,23 +68,20 @@ struct AccountDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Button {
-                    store.switchTo(account, restartCodexApp: store.settings.restartCodexAppAfterSwitch)
+                    store.switchTo(account, restartCodexApp: true)
                 } label: {
                     Label(isActive ? "Switch Again" : "Switch", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .buttonStyle(.borderedProminent)
 
-                Button {
-                    store.switchTo(account, restartCodexApp: true)
-                } label: {
-                    Label("Switch and Restart Codex App", systemImage: "arrow.clockwise.circle")
-                }
-
                 Button(role: .destructive) {
                     showingRemoveConfirmation = true
                 } label: {
                     Label("Remove", systemImage: "trash")
+                        .foregroundStyle(.red)
                 }
+                .buttonStyle(.bordered)
+                .tint(.red)
             }
 
             HStack {

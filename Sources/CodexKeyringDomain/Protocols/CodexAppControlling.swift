@@ -11,5 +11,22 @@ public enum CodexAppRestartOutcome: Equatable, Sendable {
 
 public protocol CodexAppControlling: Sendable {
     var isRunning: Bool { get }
-    func restartIfRunning() async throws -> CodexAppRestartOutcome
+
+    /// Terminate any running Codex App processes, run the supplied hook while
+    /// no Codex App process is alive (so callers can safely rewrite Codex
+    /// state files without them being overwritten on quit), and finally
+    /// relaunch the app.
+    ///
+    /// If Codex App is not running the hook is NOT executed — callers must
+    /// guard their writes with `isRunning` themselves when they need them
+    /// applied unconditionally.
+    func restartIfRunning(
+        beforeRelaunch: @Sendable () async throws -> Void
+    ) async throws -> CodexAppRestartOutcome
+}
+
+public extension CodexAppControlling {
+    func restartIfRunning() async throws -> CodexAppRestartOutcome {
+        try await restartIfRunning(beforeRelaunch: {})
+    }
 }

@@ -12,6 +12,14 @@ public enum AppPaths {
         codexDirectory.appendingPathComponent("auth.json")
     }
 
+    public static var codexConfigTomlFile: URL {
+        codexDirectory.appendingPathComponent("config.toml")
+    }
+
+    public static var codexGlobalStateFile: URL {
+        codexDirectory.appendingPathComponent(".codex-global-state.json")
+    }
+
     public static var applicationSupportDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(appName, isDirectory: true)

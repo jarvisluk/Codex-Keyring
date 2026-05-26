@@ -27,6 +27,7 @@ struct CodexKeyringApp: App {
                     store.refresh()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
+                .disabled(store.isRefreshInProgress)
             }
         }
 
@@ -69,6 +70,7 @@ private extension CodexKeyringApp {
         let repository = FileSystemManifestRepository()
         let installer = LiveCodexAuthInstaller()
         let authReader = AuthFileParser()
+        let agentPreferencesPort = LiveCodexAgentPreferencesPort()
         return AccountStore(
             repository: repository,
             installer: installer,
@@ -76,6 +78,7 @@ private extension CodexKeyringApp {
             appController: NSWorkspaceCodexAppController(),
             launchAtLoginController: SMAppServiceLaunchAtLogin(),
             loginService: ChatGPTOAuthLoginService(),
+            agentPreferencesPort: agentPreferencesPort,
             storageLocations: AccountStorageLocations(
                 codexAuthPath: AppPaths.codexAuthFile.path,
                 applicationSupportPath: AppPaths.applicationSupportDirectory.path,

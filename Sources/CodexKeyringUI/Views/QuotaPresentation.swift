@@ -47,10 +47,10 @@ extension AccountQuotaState {
             return "5h unlimited · week unlimited"
         }
 
-        let preferredWindows = bucket.windows.sortedForMenuSummary()
+        let preferredWindows = bucket.windows.sortedForMenuSummary().prefix(2)
         let parts = preferredWindows.map { "\($0.compactDurationLabel) \($0.formattedRemaining) left" }
         if !parts.isEmpty {
-            return parts.joined(separator: " · ")
+            return parts.joined(separator: " · ").cappedMenuBarText
         }
         return menuSummary
     }

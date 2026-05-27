@@ -24,15 +24,10 @@ public struct MenuBarView: View {
             }
             .disabled(!store.canSaveCurrentAuth)
 
-            Button("Refresh") {
-                store.refresh()
-            }
-            .disabled(store.isRefreshInProgress)
-
             Button("Refresh Quotas") {
                 store.refreshQuotasNow()
             }
-            .disabled(!store.settings.allowNetworkQuotaAPIs || store.isQuotaRefreshInProgress)
+            .disabled(!store.canRefreshQuotas)
 
             if !store.accounts.isEmpty {
                 Divider()
@@ -52,9 +47,12 @@ public struct MenuBarView: View {
 
                     if let quotaState = store.quotaStates[account.id],
                        let quotaLine = quotaState.menuDetailSummary {
-                        Text(quotaLine)
-                            .font(.caption)
-                            .foregroundStyle(quotaState.health.tint)
+                        Button {} label: {
+                            Text(quotaLine)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(quotaState.health.tint)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }

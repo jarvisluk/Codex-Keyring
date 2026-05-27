@@ -112,14 +112,17 @@ private struct ToolbarActionLabel: View {
         Label {
             Text(title)
         } icon: {
-            if isLoading {
-                ProgressView()
-                    .controlSize(.small)
-            } else {
+            ZStack {
                 Image(systemName: systemImage)
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.primary)
+                    .opacity(isLoading ? 0 : 1)
+
+                ProgressView()
+                    .controlSize(.small)
+                    .opacity(isLoading ? 1 : 0)
             }
+            .frame(width: 16, height: 16)
         }
         .labelStyle(.iconOnly)
         .accessibilityLabel(title)

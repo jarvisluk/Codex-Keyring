@@ -4,7 +4,9 @@ import CodexKeyringDomain
 struct SidebarView: View {
     @EnvironmentObject private var store: AccountStore
     @Binding var selection: UUID?
-    private let columnWidth: CGFloat = 288
+    private let minimumColumnWidth: CGFloat = 220
+    private let defaultColumnWidth: CGFloat = 288
+    private let maximumColumnWidth: CGFloat = 520
 
     var body: some View {
         List(selection: $selection) {
@@ -21,7 +23,11 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: columnWidth, ideal: columnWidth, max: columnWidth)
+        .navigationSplitViewColumnWidth(
+            min: minimumColumnWidth,
+            ideal: defaultColumnWidth,
+            max: maximumColumnWidth
+        )
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
                 CurrentAuthFooter()

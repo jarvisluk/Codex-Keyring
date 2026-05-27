@@ -209,6 +209,10 @@ public final class AccountStore: ObservableObject {
         accounts.contains(where: { $0.id == account.id }) && !isAccountWorkInProgress
     }
 
+    public func canBeginRename(_ account: CodexAccount) -> Bool {
+        accounts.contains(where: { $0.id == account.id }) && !isAccountWorkInProgress
+    }
+
     public func canRename(_ account: CodexAccount, to newAlias: String) -> Bool {
         let cleanedAlias = newAlias.trimmingCharacters(in: .whitespacesAndNewlines)
         return accounts.contains(where: { $0.id == account.id })

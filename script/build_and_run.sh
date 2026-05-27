@@ -78,8 +78,8 @@ stop_app() {
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 }
 
-swift build "${swift_build_args[@]}"
-BUILD_BINARY="$(swift build "${swift_build_args[@]}" --show-bin-path)/$APP_NAME"
+swift build ${swift_build_args[@]+"${swift_build_args[@]}"}
+BUILD_BINARY="$(swift build ${swift_build_args[@]+"${swift_build_args[@]}"} --show-bin-path)/$APP_NAME"
 
 stop_app
 

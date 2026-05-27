@@ -13,35 +13,34 @@ struct CodexKeyringApp: App {
     }
 
     var body: some Scene {
+        Window("Codex Keyring", id: "main") {
+            ContentView()
+                .environmentObject(store)
+                .frame(minWidth: 920, minHeight: 600)
+        }
+        .defaultSize(width: 1040, height: 680)
+        .windowResizability(.contentMinSize)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Refresh Accounts") {
+                    store.refresh()
+                }
+                .keyboardShortcut("r", modifiers: [.command])
+                .disabled(store.isRefreshInProgress)
+            }
+        }
+
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(store)
         } label: {
-            Image(systemName: menuBarSystemImage)
-                .accessibilityLabel(menuBarStatusLabel)
-                .help(menuBarStatusLabel)
+            Image(systemName: store.activeAccount == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle.badge.checkmark")
         }
         .menuBarExtraStyle(.menu)
-        .commands {
-            AccountCommands(store: store)
-        }
 
         Settings {
             SettingsView()
                 .environmentObject(store)
         }
-    }
-
-    private var menuBarSystemImage: String {
-        store.activeAccount == nil
-            ? "person.crop.circle.badge.questionmark"
-            : "person.crop.circle.badge.checkmark"
-    }
-
-    private var menuBarStatusLabel: String {
-        guard let activeAccount = store.activeAccount else {
-            return "Codex Keyring: no active saved account"
-        }
-        return "Codex Keyring: \(activeAccount.displayName) active"
     }
 }

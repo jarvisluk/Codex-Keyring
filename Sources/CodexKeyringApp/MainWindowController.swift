@@ -8,18 +8,9 @@ final class MainWindowController: NSObject, NSWindowDelegate {
 
     private var store: AccountStore?
     private var mainWindow: NSWindow?
-    private var isObserving = false
 
     func configure(store: AccountStore) {
         self.store = store
-        guard !isObserving else { return }
-        isObserving = true
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleShowMainWindowRequest),
-            name: .codexKeyringShowMainWindow,
-            object: nil
-        )
     }
 
     func show() {
@@ -45,7 +36,6 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         )
         window.identifier = NSUserInterfaceItemIdentifier("main")
         window.title = "Codex Keyring"
-        window.titleVisibility = .hidden
         window.minSize = NSSize(width: 920, height: 600)
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: contentView)
@@ -57,35 +47,9 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func showAddCurrentLoginSheet() {
-        show()
-        MainWindowRequest.runAfterCurrentMainActorTurn {
-            MainWindowRequest.showAddCurrentLoginSheet()
-        }
-    }
-
-    func showAddNewLoginFlow() {
-        show()
-        MainWindowRequest.runAfterCurrentMainActorTurn {
-            MainWindowRequest.startNewLogin()
-        }
-    }
-
-    func showImportAuthSnapshotPanel() {
-        guard let store else { return }
-        show()
-        MainWindowRequest.runAfterCurrentMainActorTurn {
-            AuthImportPanel.chooseAndImport(using: store)
-        }
-    }
-
     func windowWillClose(_ notification: Notification) {
         if notification.object as AnyObject? === mainWindow {
             mainWindow = nil
         }
-    }
-
-    @objc private func handleShowMainWindowRequest() {
-        show()
     }
 }

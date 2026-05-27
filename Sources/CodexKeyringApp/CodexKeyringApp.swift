@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import CodexKeyringUI
 
@@ -46,14 +47,51 @@ struct CodexKeyringApp: App {
                 .environmentObject(store)
                 .environmentObject(settingsPresentation)
         } label: {
-            Image(systemName: store.activeAccount == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle.badge.checkmark")
+            Image(systemName: menuBarSystemImage)
+                .accessibilityLabel(menuBarStatusLabel)
+                .help(menuBarStatusLabel)
         }
         .menuBarExtraStyle(.menu)
     }
 
     @MainActor
     private func presentSettings() {
-        openWindow(id: "main")
+        openManagerWindow()
         settingsPresentation.present()
+    }
+
+    @MainActor
+    private func openManagerWindow() {
+        if let existingWindow = existingManagerWindow {
+            if existingWindow.isMiniaturized {
+                existingWindow.deminiaturize(nil)
+            }
+            existingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        openWindow(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @MainActor
+    private var existingManagerWindow: NSWindow? {
+        NSApp.windows.first { window in
+            window.identifier?.rawValue == "main"
+                || window.title == "Codex Keyring"
+        }
+    }
+
+    private var menuBarSystemImage: String {
+        store.activeAccount == nil
+            ? "person.crop.circle.badge.questionmark"
+            : "person.crop.circle.badge.checkmark"
+    }
+
+    private var menuBarStatusLabel: String {
+        guard let activeAccount = store.activeAccount else {
+            return "Codex Keyring: no active saved account"
+        }
+        return "Codex Keyring: \(activeAccount.displayName) active"
     }
 }

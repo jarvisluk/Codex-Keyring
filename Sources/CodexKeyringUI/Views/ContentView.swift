@@ -52,7 +52,7 @@ public struct ContentView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
-                    store.loginNewCodexAccount()
+                    startNewLogin()
                 } label: {
                     ToolbarActionLabel(
                         "Add Login",
@@ -97,6 +97,15 @@ public struct ContentView: View {
         .onChange(of: store.activeAccountID) {
             reconcileSelection()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .codexKeyringStartNewLogin)) { _ in
+            startNewLogin()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .codexKeyringShowAddCurrentLoginSheet)) { _ in
+            showAddCurrentLoginSheet()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .codexKeyringImportAuthSnapshot)) { _ in
+            importAuthFile()
+        }
         .animation(.easeInOut(duration: 0.16), value: settingsPresentation.isPresented)
     }
 
@@ -123,6 +132,11 @@ public struct ContentView: View {
 
     private func importAuthFile() {
         AuthImportPanel.chooseAndImport(using: store)
+    }
+
+    private func startNewLogin() {
+        guard store.canLoginNewAccount else { return }
+        store.loginNewCodexAccount()
     }
 
     private func showAddCurrentLoginSheet() {
@@ -244,7 +258,7 @@ private struct EmptyAccountsView: View {
     @ViewBuilder
     private var addLoginButton: some View {
         let button = Button {
-            store.loginNewCodexAccount()
+            startNewLogin()
         } label: {
             Label("Add Login", systemImage: store.isLoginInProgress ? "hourglass" : "person.badge.plus")
         }
@@ -255,5 +269,10 @@ private struct EmptyAccountsView: View {
         } else {
             button.buttonStyle(.borderedProminent)
         }
+    }
+
+    private func startNewLogin() {
+        guard store.canLoginNewAccount else { return }
+        store.loginNewCodexAccount()
     }
 }

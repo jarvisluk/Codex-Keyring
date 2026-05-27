@@ -23,17 +23,17 @@ public struct MenuBarView: View {
             Divider()
 
             Button("Add New Login") {
-                store.loginNewCodexAccount()
+                openAddNewLoginFlow()
             }
             .disabled(!store.canLoginNewAccount)
 
             Button("Add Current Login") {
-                store.addCurrentAccount(alias: nil)
+                openAddCurrentLoginSheet()
             }
             .disabled(!store.canAddCurrentLogin)
 
             Button("Import Auth Snapshot...") {
-                AuthImportPanel.chooseAndImport(using: store)
+                openImportAuthSnapshotPanel()
             }
             .disabled(!store.canImportAccount)
 
@@ -116,16 +116,47 @@ public struct MenuBarView: View {
     }
 
     private func openManagerWindow() {
-        if let existing = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
-            if existing.isMiniaturized {
-                existing.deminiaturize(nil)
+        if let existingWindow = existingManagerWindow {
+            if existingWindow.isMiniaturized {
+                existingWindow.deminiaturize(nil)
             }
-            existing.makeKeyAndOrderFront(nil)
+            existingWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
         openWindow(id: "main")
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func openAddNewLoginFlow() {
+        guard store.canLoginNewAccount else { return }
+        openManagerWindow()
+        MainWindowRequest.runAfterCurrentMainActorTurn {
+            MainWindowRequest.startNewLogin()
+        }
+    }
+
+    private func openAddCurrentLoginSheet() {
+        guard store.canAddCurrentLogin else { return }
+        openManagerWindow()
+        MainWindowRequest.runAfterCurrentMainActorTurn {
+            MainWindowRequest.showAddCurrentLoginSheet()
+        }
+    }
+
+    private func openImportAuthSnapshotPanel() {
+        guard store.canImportAccount else { return }
+        openManagerWindow()
+        MainWindowRequest.runAfterCurrentMainActorTurn {
+            MainWindowRequest.importAuthSnapshot()
+        }
+    }
+
+    private var existingManagerWindow: NSWindow? {
+        NSApp.windows.first { window in
+            window.identifier?.rawValue == "main"
+                || window.title == "Codex Keyring"
+        }
     }
 }
 

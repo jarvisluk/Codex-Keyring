@@ -141,13 +141,13 @@ import Foundation
 let timeout = TimeInterval(CommandLine.arguments.dropFirst().first ?? "10") ?? 10
 let deadline = Date().addingTimeInterval(timeout)
 
-func mainWindowExists() -> Bool {
+func mainWindowCount() -> Int {
   let windows = CGWindowListCopyWindowInfo(
     CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements),
     kCGNullWindowID
   ) as? [[String: Any]] ?? []
 
-  return windows.contains { window in
+  return windows.filter { window in
     guard (window[kCGWindowOwnerName as String] as? String) == "Codex Keyring" else {
       return false
     }
@@ -157,11 +157,11 @@ func mainWindowExists() -> Bool {
     let width = (bounds["Width"] as? NSNumber)?.doubleValue ?? 0
     let height = (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
     return width >= 600 && height >= 400
-  }
+  }.count
 }
 
 while Date() < deadline {
-  if mainWindowExists() {
+  if mainWindowCount() == 1 {
     exit(0)
   }
   Thread.sleep(forTimeInterval: 0.25)
@@ -172,7 +172,7 @@ SWIFT
   then
     return 0
   fi
-  echo "Codex Keyring launched, but no main window appeared within ${VERIFY_TIMEOUT_SECONDS}s." >&2
+  echo "Codex Keyring launched, but exactly one main window did not appear within ${VERIFY_TIMEOUT_SECONDS}s." >&2
   return 1
 }
 

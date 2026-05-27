@@ -62,7 +62,7 @@ public struct MenuBarView: View {
                         Label {
                             Text(MenuBarAccountPresentation(account: account).title)
                         } icon: {
-                            Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
+                            Image(systemName: isActive ? "checkmark.circle.fill" : "person.crop.circle")
                                 .foregroundStyle(isActive ? .green : .secondary)
                         }
                     }
@@ -70,9 +70,12 @@ public struct MenuBarView: View {
 
                     if let quotaState = store.quotaStates[account.id],
                        let quotaLine = quotaState.menuDetailSummary {
-                        Text(quotaLine)
-                            .font(.caption)
-                            .foregroundStyle(quotaState.health.tint)
+                        Button {} label: {
+                            Text(quotaLine)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(quotaState.health.tint)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }

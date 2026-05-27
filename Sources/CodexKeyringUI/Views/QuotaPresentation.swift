@@ -4,12 +4,13 @@ import CodexKeyringDomain
 extension AccountQuotaState {
     var sidebarSummary: String? {
         if phase == .loading { return "quota refreshing" }
-        if snapshot?.primaryBucket?.isUnlimited == true {
-            return "unlimited quota"
+        guard let bucket = snapshot?.primaryBucket else {
+            return fallbackSummary
         }
-        if let remaining = snapshot?.primaryBucket?.remainingPercent {
-            return "\(Int(remaining.rounded()))% quota left"
-        }
+        return bucket.compactLimitSummary ?? fallbackSummary
+    }
+
+    private var fallbackSummary: String? {
         switch phase {
         case .error:
             return "quota unavailable"
@@ -43,16 +44,7 @@ extension AccountQuotaState {
         guard let bucket = snapshot?.primaryBucket else {
             return menuSummary
         }
-        if bucket.isUnlimited {
-            return "5h unlimited · week unlimited"
-        }
-
-        let preferredWindows = bucket.windows.sortedForMenuSummary().prefix(2)
-        let parts = preferredWindows.map { "\($0.compactDurationLabel) \($0.formattedRemaining) left" }
-        if !parts.isEmpty {
-            return parts.joined(separator: " · ").cappedMenuBarText
-        }
-        return menuSummary
+        return bucket.compactLimitSummary?.cappedMenuBarText ?? menuSummary
     }
 }
 
@@ -145,5 +137,19 @@ private extension Array where Element == QuotaWindow {
             return !preferredDurations.contains(duration)
         }
         return preferred + remaining
+    }
+}
+
+private extension QuotaBucket {
+    var compactLimitSummary: String? {
+        if isUnlimited {
+            return "5h unlimited · week unlimited"
+        }
+
+        let parts = windows
+            .sortedForMenuSummary()
+            .prefix(2)
+            .map { "\($0.compactDurationLabel) \($0.formattedRemaining) left" }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

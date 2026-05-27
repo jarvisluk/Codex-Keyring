@@ -5,6 +5,9 @@ struct SidebarView: View {
     @EnvironmentObject private var store: AccountStore
     @Binding var selection: UUID?
     let onAddCurrentLogin: () -> Void
+    private let minimumColumnWidth: CGFloat = 220
+    private let defaultColumnWidth: CGFloat = 288
+    private let maximumColumnWidth: CGFloat = 520
 
     var body: some View {
         List(selection: $selection) {
@@ -21,7 +24,11 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+        .navigationSplitViewColumnWidth(
+            min: minimumColumnWidth,
+            ideal: defaultColumnWidth,
+            max: maximumColumnWidth
+        )
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: KeyringStyle.Spacing.small) {
                 CurrentAuthFooter(onAddCurrentLogin: onAddCurrentLogin)
@@ -75,7 +82,7 @@ private struct CurrentAuthFooter: View {
         if store.savedAccountForCurrentAuth != nil {
             return "checkmark.circle.fill"
         }
-        return "person.crop.circle.badge.plus"
+        return "circle"
     }
 
     private var statusTint: Color {

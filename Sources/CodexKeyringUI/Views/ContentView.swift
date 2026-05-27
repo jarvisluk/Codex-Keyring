@@ -35,21 +35,14 @@ public struct ContentView: View {
                 onAddCurrentLogin: showAddCurrentLoginSheet
             )
         } detail: {
-            if let selectedAccount {
-                AccountDetailView(account: selectedAccount)
-            } else {
-                EmptyAccountsView(
-                    onAddCurrentLogin: showAddCurrentLoginSheet,
-                    onImport: importAuthFile
-                )
-            }
+            detailContent
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     store.loginNewCodexAccount()
                 } label: {
-                    ToolbarButtonLabel(
+                    ToolbarActionLabel(
                         "Add Login",
                         systemImage: store.isLoginInProgress ? "hourglass" : "plus.circle"
                     )
@@ -60,20 +53,22 @@ public struct ContentView: View {
                 Button {
                     importAuthFile()
                 } label: {
-                    ToolbarButtonLabel("Import", systemImage: "square.and.arrow.down")
+                    ToolbarActionLabel("Import", systemImage: "square.and.arrow.down")
                 }
                 .disabled(!store.canImportAccount)
+                .help("Import Codex auth.json")
 
                 Button {
                     store.refresh()
                 } label: {
-                    ToolbarButtonLabel(
+                    ToolbarActionLabel(
                         "Refresh",
                         systemImage: "arrow.clockwise",
                         isLoading: store.isRefreshInProgress
                     )
                 }
                 .disabled(!store.canRefreshAccounts)
+                .help("Refresh accounts")
             }
         }
         .accountStoreFailureAlert(store)
@@ -89,6 +84,18 @@ public struct ContentView: View {
         }
         .onChange(of: store.activeAccountID) {
             reconcileSelection()
+        }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        if let selectedAccount {
+            AccountDetailView(account: selectedAccount)
+        } else {
+            EmptyAccountsView(
+                onAddCurrentLogin: showAddCurrentLoginSheet,
+                onImport: importAuthFile
+            )
         }
     }
 
@@ -111,7 +118,7 @@ public struct ContentView: View {
     }
 }
 
-private struct ToolbarButtonLabel: View {
+private struct ToolbarActionLabel: View {
     let title: String
     let systemImage: String
     let isLoading: Bool
@@ -126,16 +133,20 @@ private struct ToolbarButtonLabel: View {
         Label {
             Text(title)
         } icon: {
-            if isLoading {
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(width: KeyringStyle.Icon.toolbarSize, height: KeyringStyle.Icon.toolbarSize)
-            } else {
+            ZStack {
                 Image(systemName: systemImage)
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(.primary)
+                    .opacity(isLoading ? 0 : 1)
+
+                ProgressView()
+                    .controlSize(.small)
+                    .opacity(isLoading ? 1 : 0)
             }
+            .frame(width: 16, height: 16)
         }
+        .labelStyle(.iconOnly)
+        .accessibilityLabel(title)
     }
 }
 

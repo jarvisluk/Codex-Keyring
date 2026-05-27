@@ -479,6 +479,7 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertFalse(store.canRefreshQuotas)
         XCTAssertFalse(store.canSwitch(to: account))
         XCTAssertFalse(store.canRemove(account))
+        XCTAssertFalse(store.canBeginRename(account))
         XCTAssertFalse(store.canRename(account, to: "renamed"))
         XCTAssertTrue(store.isStatusBusy)
 
@@ -491,6 +492,7 @@ final class AccountStoreTests: XCTestCase {
         XCTAssertTrue(store.canRefreshAccounts)
         XCTAssertTrue(store.canSwitch(to: account))
         XCTAssertTrue(store.canRemove(account))
+        XCTAssertTrue(store.canBeginRename(account))
         XCTAssertTrue(store.canRename(account, to: "renamed"))
     }
 
@@ -736,6 +738,7 @@ final class AccountStoreTests: XCTestCase {
 
         XCTAssertEqual(repository.loadCallCount, 1)
         XCTAssertFalse(store.canSwitch(to: account))
+        XCTAssertFalse(store.canBeginRename(account))
         XCTAssertFalse(store.canRename(account, to: "renamed"))
         XCTAssertFalse(store.canRemove(account))
 
@@ -756,6 +759,7 @@ final class AccountStoreTests: XCTestCase {
         }
 
         XCTAssertTrue(store.canSwitch(to: account))
+        XCTAssertTrue(store.canBeginRename(account))
         XCTAssertTrue(store.canRename(account, to: "renamed"))
         XCTAssertTrue(store.canRemove(account))
     }

@@ -4,8 +4,9 @@ import CodexKeyringDomain
 struct AccountDetailView: View {
     @EnvironmentObject private var store: AccountStore
     @State private var showingRemoveConfirmation = false
-    @State private var aliasDraft = ""
-    @FocusState private var isAliasFieldFocused: Bool
+    @State private var showingRenamePopover = false
+    @State private var renameDraft = ""
+    @FocusState private var isRenameFieldFocused: Bool
 
     var account: CodexAccount
 
@@ -13,16 +14,12 @@ struct AccountDetailView: View {
         store.activeAccount?.id == account.id
     }
 
-    private var cleanedAliasDraft: String {
-        aliasDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var hasAliasChange: Bool {
-        cleanedAliasDraft != account.alias
+    private var cleanedRenameDraft: String {
+        renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var canSubmitAliasRename: Bool {
-        store.canRename(account, to: cleanedAliasDraft)
+        store.canRename(account, to: cleanedRenameDraft)
     }
 
     var body: some View {
@@ -38,15 +35,17 @@ struct AccountDetailView: View {
             .frame(maxWidth: KeyringStyle.Layout.detailContentMaxWidth, alignment: .leading)
         }
         .navigationTitle(account.displayName)
+        .hidesWindowToolbarTitle()
         .onAppear {
-            aliasDraft = account.alias
+            renameDraft = account.alias
         }
         .onChange(of: account.id) {
-            aliasDraft = account.alias
-            isAliasFieldFocused = false
+            renameDraft = account.alias
+            showingRenamePopover = false
+            isRenameFieldFocused = false
         }
         .onChange(of: account.alias) {
-            aliasDraft = account.alias
+            renameDraft = account.alias
         }
         .confirmationDialog("Remove saved account?", isPresented: $showingRemoveConfirmation) {
             Button("Remove Snapshot", role: .destructive) {
@@ -84,56 +83,83 @@ struct AccountDetailView: View {
     }
 
     private var actions: some View {
-        VStack(alignment: .leading, spacing: KeyringStyle.Spacing.section) {
-            HStack {
-                Button {
-                    store.switchTo(account, restartCodexApp: store.settings.restartCodexAppAfterSwitch)
-                } label: {
-                    Label(isActive ? "Switch Again" : "Switch", systemImage: "arrow.triangle.2.circlepath")
-                }
-                .buttonStyle(.borderedProminent)
-                .help(switchHelpText)
-                .disabled(!store.canSwitch(to: account))
+        HStack(spacing: KeyringStyle.Spacing.small) {
+            Button {
+                store.switchTo(account, restartCodexApp: store.settings.restartCodexAppAfterSwitch)
+            } label: {
+                Label(isActive ? "Switch Again" : "Switch", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .buttonStyle(.borderedProminent)
+            .help(switchHelpText)
+            .disabled(!store.canSwitch(to: account))
 
-                Button(role: .destructive) {
-                    showingRemoveConfirmation = true
-                } label: {
-                    Label("Remove", systemImage: "trash")
-                        .foregroundStyle(.red)
-                }
-                .buttonStyle(.bordered)
-                .tint(.red)
-                .disabled(!store.canRemove(account))
+            Button {
+                beginAliasRename()
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            .buttonStyle(.bordered)
+            .disabled(!store.canBeginRename(account))
+            .popover(isPresented: $showingRenamePopover, arrowEdge: .bottom) {
+                renamePopover
             }
 
-            HStack {
-                TextField("Alias", text: $aliasDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($isAliasFieldFocused)
-                    .onSubmit {
-                        submitAliasRename()
-                    }
-                    .frame(maxWidth: KeyringStyle.Layout.aliasFieldMaxWidth)
-
-                Button {
-                    submitAliasRename()
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                }
-                .disabled(!canSubmitAliasRename)
+            Button(role: .destructive) {
+                showingRemoveConfirmation = true
+            } label: {
+                Label("Remove", systemImage: "trash")
+                    .foregroundStyle(.red)
             }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .disabled(!store.canRemove(account))
         }
     }
 
-    private func submitAliasRename() {
-        guard hasAliasChange else {
-            aliasDraft = account.alias
-            isAliasFieldFocused = false
-            return
+    private var renamePopover: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Rename Account")
+                .font(.headline)
+
+            TextField("New name", text: $renameDraft)
+                .textFieldStyle(.roundedBorder)
+                .focused($isRenameFieldFocused)
+                .onSubmit {
+                    submitAliasRename()
+                }
+                .frame(width: 280)
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    showingRenamePopover = false
+                    isRenameFieldFocused = false
+                }
+                Button("Rename") {
+                    submitAliasRename()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSubmitAliasRename)
+            }
         }
+        .padding(16)
+        .frame(width: 320)
+        .onAppear {
+            isRenameFieldFocused = true
+        }
+    }
+
+    private func beginAliasRename() {
+        renameDraft = account.alias
+        showingRenamePopover = true
+    }
+
+    private func submitAliasRename() {
         guard canSubmitAliasRename else { return }
-        isAliasFieldFocused = false
-        store.rename(account, to: cleanedAliasDraft)
+        isRenameFieldFocused = false
+        showingRenamePopover = false
+        store.rename(account, to: cleanedRenameDraft)
     }
 
     private var switchHelpText: String {
@@ -354,5 +380,16 @@ struct AccountDetailMetadataPresentation: Equatable {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "Unknown" }
         return String(trimmed.prefix(10))
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func hidesWindowToolbarTitle() -> some View {
+        if #available(macOS 15.0, *) {
+            toolbar(removing: .title)
+        } else {
+            self
+        }
     }
 }

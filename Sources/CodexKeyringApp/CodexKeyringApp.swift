@@ -9,7 +9,6 @@ struct CodexKeyringApp: App {
     init() {
         let store = AccountStoreFactory.makeStore()
         _store = StateObject(wrappedValue: store)
-        MainWindowController.shared.configure(store: store)
     }
 
     var body: some Scene {

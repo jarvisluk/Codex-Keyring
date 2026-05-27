@@ -7,14 +7,16 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     static let shared = MainWindowController()
 
     private var store: AccountStore?
+    private var settingsPresentation: SettingsPresentationStore?
     private var mainWindow: NSWindow?
 
-    func configure(store: AccountStore) {
+    func configure(store: AccountStore, settingsPresentation: SettingsPresentationStore) {
         self.store = store
+        self.settingsPresentation = settingsPresentation
     }
 
     func show() {
-        guard let store else { return }
+        guard let store, let settingsPresentation else { return }
         if let mainWindow {
             if mainWindow.isMiniaturized {
                 mainWindow.deminiaturize(nil)
@@ -27,6 +29,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
 
         let contentView = ContentView()
             .environmentObject(store)
+            .environmentObject(settingsPresentation)
             .frame(minWidth: 920, minHeight: 600)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1040, height: 680),

@@ -5,8 +5,11 @@ import CodexKeyringDomain
 
 public struct SettingsView: View {
     @EnvironmentObject private var store: AccountStore
+    private let onDismiss: (() -> Void)?
 
-    public init() {}
+    public init(onDismiss: (() -> Void)? = nil) {
+        self.onDismiss = onDismiss
+    }
 
     private var settingsActionIndent: CGFloat {
         KeyringStyle.Layout.settingsLocationLabelWidth
@@ -14,16 +17,23 @@ public struct SettingsView: View {
     }
 
     public var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: KeyringStyle.Spacing.settingsSection) {
-                preferencesSection
+        VStack(spacing: 0) {
+            if let onDismiss {
+                SettingsModalHeader(onDismiss: onDismiss)
                 Divider()
-                locationsSection
-                Divider()
-                logsSection
             }
-            .padding(.horizontal, KeyringStyle.Spacing.settingsHorizontalPadding)
-            .padding(.vertical, KeyringStyle.Spacing.settingsVerticalPadding)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: KeyringStyle.Spacing.settingsSection) {
+                    preferencesSection
+                    Divider()
+                    locationsSection
+                    Divider()
+                    logsSection
+                }
+                .padding(.horizontal, KeyringStyle.Spacing.settingsHorizontalPadding)
+                .padding(.vertical, KeyringStyle.Spacing.settingsVerticalPadding)
+            }
         }
         .frame(
             width: KeyringStyle.Layout.settingsWindowWidth,
@@ -250,6 +260,31 @@ public struct SettingsView: View {
             return "When switching accounts, Codex Keyring restarts Codex App, captures the outgoing account's model, reasoning effort, approval/sandbox mode, and Full Access / Auto Review setting, and applies the incoming account's saved values while Codex App is stopped."
         }
         return "Per-account agent settings require Restart Codex App after switching accounts. Turn that on before switching when you want saved model, reasoning effort, approval/sandbox mode, and Full Access / Auto Review settings restored automatically."
+    }
+}
+
+private struct SettingsModalHeader: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: KeyringStyle.Spacing.section) {
+            Text("Settings")
+                .font(.headline)
+
+            Spacer()
+
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .symbolRenderingMode(.monochrome)
+            }
+            .buttonStyle(.borderless)
+            .keyboardShortcut(.cancelAction)
+            .help("Close Settings")
+        }
+        .padding(.horizontal, KeyringStyle.Spacing.cardPadding)
+        .padding(.vertical, KeyringStyle.Spacing.section)
     }
 }
 

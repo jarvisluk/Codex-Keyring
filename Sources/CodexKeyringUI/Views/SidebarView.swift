@@ -13,6 +13,7 @@ struct SidebarView: View {
                     AccountRow(
                         account: account,
                         isActive: store.activeAccount?.id == account.id,
+                        isSelected: selection == account.id,
                         quotaState: store.quotaStates[account.id]
                     )
                         .tag(account.id)
@@ -20,6 +21,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .tint(.green)
         .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
@@ -191,16 +193,18 @@ struct CurrentAuthFooterPresentation: Equatable {
 private struct AccountRow: View {
     var account: CodexAccount
     var isActive: Bool
+    var isSelected: Bool
     var quotaState: AccountQuotaState?
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: isActive ? "checkmark.circle.fill" : "person.crop.circle")
-                .foregroundStyle(isActive ? .green : .secondary)
+                .foregroundStyle(statusIconTint)
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.displayName)
+                    .foregroundStyle(isSelected ? .white : .primary)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 detailLine
@@ -214,17 +218,35 @@ private struct AccountRow: View {
     private var detailLine: some View {
         HStack(spacing: 4) {
             Text(account.displayEmail)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(secondaryTextTint)
                 .truncationMode(.middle)
             if let quota = quotaState?.sidebarSummary {
                 Text("-")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(secondaryTextTint)
                 Text(quota)
-                    .foregroundStyle(quotaState?.health.tint ?? .secondary)
+                    .foregroundStyle(quotaTextTint)
             }
         }
         .font(.caption)
         .lineLimit(1)
+    }
+
+    private var statusIconTint: Color {
+        if isSelected {
+            return isActive ? .white : .white.opacity(0.85)
+        }
+        return isActive ? .green : .secondary
+    }
+
+    private var secondaryTextTint: Color {
+        isSelected ? .white.opacity(0.82) : .secondary
+    }
+
+    private var quotaTextTint: Color {
+        if isSelected {
+            return .white
+        }
+        return quotaState?.health.tint ?? .secondary
     }
 
     private var accessibilitySummary: String {

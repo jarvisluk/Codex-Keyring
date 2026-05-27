@@ -8,8 +8,15 @@ final class ChatGPTQuotaClientTests: XCTestCase {
         super.tearDown()
     }
 
+    func testDefaultBaseURLUsesChatGPTBackendAPIEndpoint() {
+        XCTAssertEqual(
+            ChatGPTQuotaClient.defaultBaseURL.absoluteString,
+            "https://chatgpt.com/backend-api"
+        )
+    }
+
     func testFetchesUsageWithHeadersAndParsesBuckets() async throws {
-        let accessToken = makeJWT(payload: [
+        let accessToken = try makeJWT(payload: [
             "exp": Date().addingTimeInterval(3600).timeIntervalSince1970,
             "https://api.openai.com/auth": [
                 "chatgpt_account_id": "account-123",
@@ -61,7 +68,7 @@ final class ChatGPTQuotaClientTests: XCTestCase {
             ])
         }
 
-        let client = makeClient()
+        let client = try makeClient()
         let result = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
         let snapshot = try XCTUnwrap(result.state.snapshot)
         let primary = try XCTUnwrap(snapshot.primaryBucket)
@@ -77,8 +84,125 @@ final class ChatGPTQuotaClientTests: XCTestCase {
         XCTAssertEqual(other.health, .low)
     }
 
+    func testTokenMetadataTrimsJWTClaimsBeforeUsingThem() async throws {
+        let accessToken = try makeJWT(payload: [
+            "exp": Date().addingTimeInterval(3600).timeIntervalSince1970,
+            "https://api.openai.com/auth": [
+                "chatgpt_account_id": " account-from-token ",
+                "chatgpt_plan_type": " team "
+            ],
+            "https://api.openai.com/profile": [
+                "email": " token@example.com "
+            ]
+        ])
+        let snapshotURL = try writeAuthJSON(accessToken: accessToken, accountID: nil)
+        MockURLProtocol.setHandler { request in
+            XCTAssertEqual(request.value(forHTTPHeaderField: "ChatGPT-Account-Id"), "account-from-token")
+            return try .json([
+                "rate_limit": [
+                    "primary_window": [
+                        "used_percent": 5,
+                        "limit_window_seconds": 5 * 60 * 60,
+                        "reset_at": 1_735_434_000
+                    ]
+                ]
+            ])
+        }
+
+        let client = try makeClient()
+        let result = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+
+        XCTAssertEqual(result.state.snapshot?.planType, "team")
+        XCTAssertEqual(result.state.snapshot?.email, "token@example.com")
+        XCTAssertEqual(result.state.snapshot?.primaryBucket?.remainingPercent, 95)
+    }
+
+    func testUsageURLPreservesNestedBasePathWithTrailingSlash() async throws {
+        let accessToken = try makeJWT(payload: [
+            "exp": Date().addingTimeInterval(3600).timeIntervalSince1970
+        ])
+        let snapshotURL = try writeAuthJSON(accessToken: accessToken)
+        MockURLProtocol.setHandler { request in
+            XCTAssertEqual(request.url?.absoluteString, "https://chatgpt.test/backend-api/wham/usage")
+            XCTAssertEqual(request.url?.path, "/backend-api/wham/usage")
+            return try .json([
+                "rate_limit": [
+                    "primary_window": [
+                        "used_percent": 15,
+                        "limit_window_seconds": 5 * 60 * 60,
+                        "reset_at": 1_735_434_000
+                    ]
+                ]
+            ])
+        }
+
+        let client = try makeClient(baseURL: testURL("https://chatgpt.test/backend-api/"))
+        let result = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+
+        XCTAssertEqual(MockURLProtocol.requests.map { $0.url?.path }, ["/backend-api/wham/usage"])
+        XCTAssertEqual(result.state.snapshot?.endpoint, "https://chatgpt.test/backend-api/wham/usage")
+        XCTAssertEqual(result.state.snapshot?.primaryBucket?.remainingPercent, 85)
+    }
+
+    func testQueryQuotaLoadsSnapshotOnConfiguredIOQueue() async throws {
+        let oldAccessToken = try makeJWT(payload: [
+            "exp": Date().addingTimeInterval(3600).timeIntervalSince1970,
+            "https://api.openai.com/auth": [
+                "chatgpt_account_id": "old-account",
+                "chatgpt_plan_type": "plus"
+            ]
+        ])
+        let queuedAccessToken = try makeJWT(payload: [
+            "exp": Date().addingTimeInterval(3600).timeIntervalSince1970,
+            "https://api.openai.com/auth": [
+                "chatgpt_account_id": "queued-account",
+                "chatgpt_plan_type": "pro"
+            ]
+        ])
+        let snapshotURL = try writeAuthJSON(accessToken: oldAccessToken)
+        let ioQueue = DispatchQueue(label: "tests.ChatGPTQuotaClient.suspended")
+        let releaseQueue = blockSerialQueue(ioQueue, description: "quota client io queue")
+        var didReleaseQueue = false
+        defer {
+            if !didReleaseQueue {
+                releaseQueue()
+            }
+        }
+        MockURLProtocol.setHandler { request in
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(queuedAccessToken)")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "ChatGPT-Account-Id"), "queued-account")
+            return try .json([
+                "plan_type": "pro",
+                "rate_limit": [
+                    "primary_window": [
+                        "used_percent": 25,
+                        "limit_window_seconds": 5 * 60 * 60,
+                        "reset_at": 1_735_434_000
+                    ]
+                ]
+            ])
+        }
+
+        let client = try makeClient(ioQueue: ioQueue)
+        let quotaRequest = request(snapshotURL: snapshotURL)
+        let queryStarted = expectation(description: "quota query started")
+        let quotaTask = Task {
+            queryStarted.fulfill()
+            return try await client.queryQuota(for: quotaRequest)
+        }
+        await fulfillment(of: [queryStarted], timeout: 1)
+
+        XCTAssertTrue(MockURLProtocol.requests.isEmpty)
+        try overwriteAuthJSON(at: snapshotURL, accessToken: queuedAccessToken)
+
+        releaseQueue()
+        didReleaseQueue = true
+        let result = try await quotaTask.value
+        XCTAssertEqual(result.state.snapshot?.planType, "pro")
+    }
+
     func testParsesCodexRateLimitsPayloadIntoFiveHourAndWeeklyWindows() async throws {
-        let accessToken = makeJWT(payload: [
+        let accessToken = try makeJWT(payload: [
             "exp": Date().addingTimeInterval(3600).timeIntervalSince1970
         ])
         let snapshotURL = try writeAuthJSON(accessToken: accessToken)
@@ -104,7 +228,7 @@ final class ChatGPTQuotaClientTests: XCTestCase {
             ])
         }
 
-        let client = makeClient()
+        let client = try makeClient()
         let result = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
         let primary = try XCTUnwrap(result.state.snapshot?.primaryBucket)
 
@@ -116,7 +240,7 @@ final class ChatGPTQuotaClientTests: XCTestCase {
     }
 
     func testBusinessRateLimitsWithoutWindowsParsesAsUnlimited() async throws {
-        let accessToken = makeJWT(payload: [
+        let accessToken = try makeJWT(payload: [
             "exp": Date().addingTimeInterval(3600).timeIntervalSince1970
         ])
         let snapshotURL = try writeAuthJSON(accessToken: accessToken)
@@ -138,7 +262,7 @@ final class ChatGPTQuotaClientTests: XCTestCase {
             ])
         }
 
-        let client = makeClient()
+        let client = try makeClient()
         let result = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
         let primary = try XCTUnwrap(result.state.snapshot?.primaryBucket)
 
@@ -148,23 +272,97 @@ final class ChatGPTQuotaClientTests: XCTestCase {
         XCTAssertEqual(primary.health, .ready)
     }
 
+    func testRefreshOnlySnapshotRefreshesBeforeFetchingUsage() async throws {
+        let snapshotURL = try writeRefreshOnlyAuthJSON(refreshToken: "refresh-only")
+        let freshExpiry = Date().addingTimeInterval(3600).timeIntervalSince1970
+        let freshAccess = try makeJWT(payload: [
+            "exp": freshExpiry,
+            "https://api.openai.com/auth": [
+                "chatgpt_account_id": "account-refresh",
+                "chatgpt_plan_type": "team"
+            ],
+            "https://api.openai.com/profile": [
+                "email": "refresh@example.com"
+            ]
+        ])
+
+        MockURLProtocol.setHandler { request in
+            switch request.url?.path {
+            case "/oauth/token":
+                return try .json([
+                    "access_token": freshAccess,
+                    "refresh_token": "refresh-next"
+                ])
+            case "/backend-api/wham/usage":
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer \(freshAccess)")
+                XCTAssertEqual(request.value(forHTTPHeaderField: "ChatGPT-Account-Id"), "account-refresh")
+                return try .json([
+                    "plan_type": "team",
+                    "email": "refresh@example.com",
+                    "rate_limit": [
+                        "primary_window": [
+                            "used_percent": 40,
+                            "limit_window_seconds": 5 * 60 * 60,
+                            "reset_at": 1_735_434_000
+                        ]
+                    ]
+                ])
+            default:
+                XCTFail("unexpected request: \(request.url?.absoluteString ?? "<nil>")")
+                return .status(404)
+            }
+        }
+
+        let client = try makeClient()
+        let result = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+
+        XCTAssertEqual(MockURLProtocol.requests.map { $0.url?.path }, ["/oauth/token", "/backend-api/wham/usage"])
+        XCTAssertEqual(result.updatedMetadata?.email, "refresh@example.com")
+        XCTAssertEqual(result.updatedMetadata?.plan, "team")
+        XCTAssertEqual(result.updatedMetadata?.accountIdentifier, "account-refresh")
+        XCTAssertEqual(result.updatedMetadata?.tokenExpiresAt, Date(timeIntervalSince1970: freshExpiry))
+        XCTAssertEqual(result.state.snapshot?.primaryBucket?.remainingPercent, 60)
+        XCTAssertEqual(try tokenValue("access_token", in: snapshotURL), freshAccess)
+        XCTAssertEqual(try tokenValue("refresh_token", in: snapshotURL), "refresh-next")
+        XCTAssertEqual(try tokenValue("account_id", in: snapshotURL), "account-refresh")
+    }
+
+    func testWhitespaceOnlySnapshotTokensRequireReloginBeforeNetworkRequest() async throws {
+        let snapshotURL = try writeAuthJSON(accessToken: " \n\t ", refreshToken: "   ")
+        let client = try makeClient()
+
+        do {
+            _ = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+            XCTFail("Expected whitespace-only tokens to require relogin.")
+        } catch CodexKeyringError.quotaRequiresRelogin(let reason) {
+            XCTAssertEqual(reason, "The saved auth snapshot has no access or refresh token.")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertTrue(MockURLProtocol.requests.isEmpty)
+    }
+
     func testExpiredAccessTokenRefreshesAndWritesSnapshotAndLiveAuth() async throws {
-        let expiredAccess = makeJWT(payload: [
+        let expiredAccess = try makeJWT(payload: [
             "exp": Date().addingTimeInterval(-3600).timeIntervalSince1970,
             "https://api.openai.com/auth": [
                 "chatgpt_account_id": "account-123",
                 "chatgpt_plan_type": "plus"
             ]
         ])
-        let freshAccess = makeJWT(payload: [
-            "exp": Date().addingTimeInterval(3600).timeIntervalSince1970,
+        let freshExpiry = Date().addingTimeInterval(3600).timeIntervalSince1970
+        let freshAccess = try makeJWT(payload: [
+            "exp": freshExpiry,
             "https://api.openai.com/auth": [
                 "chatgpt_account_id": "account-123",
                 "chatgpt_plan_type": "pro"
             ]
         ])
         let snapshotURL = try writeAuthJSON(accessToken: expiredAccess, refreshToken: "refresh-old")
-        let liveURL = snapshotURL.deletingLastPathComponent().appendingPathComponent("live-auth.json")
+        let liveDirectory = snapshotURL.deletingLastPathComponent().appendingPathComponent("live", isDirectory: true)
+        try FileManager.default.createDirectory(at: liveDirectory, withIntermediateDirectories: true)
+        let liveURL = liveDirectory.appendingPathComponent("auth.json")
         try FileManager.default.copyItem(at: snapshotURL, to: liveURL)
 
         MockURLProtocol.setHandler { request in
@@ -192,22 +390,119 @@ final class ChatGPTQuotaClientTests: XCTestCase {
             }
         }
 
-        let client = makeClient()
+        let client = try makeClient()
         let result = try await client.queryQuota(
             for: request(snapshotURL: snapshotURL, liveAuthFileURL: liveURL)
         )
 
         XCTAssertEqual(MockURLProtocol.requests.map { $0.url?.path }, ["/oauth/token", "/backend-api/wham/usage"])
-        XCTAssertEqual(result.updatedMetadata?.plan, "plus")
+        XCTAssertEqual(result.updatedMetadata?.plan, "pro")
+        XCTAssertEqual(result.updatedMetadata?.tokenExpiresAt, Date(timeIntervalSince1970: freshExpiry))
         XCTAssertEqual(result.state.snapshot?.primaryBucket?.remainingPercent, 80)
         XCTAssertEqual(try tokenValue("access_token", in: snapshotURL), freshAccess)
         XCTAssertEqual(try tokenValue("refresh_token", in: snapshotURL), "refresh-new")
         XCTAssertEqual(try tokenValue("access_token", in: liveURL), freshAccess)
         XCTAssertEqual(try tokenValue("refresh_token", in: liveURL), "refresh-new")
+        XCTAssertEqual(try filePermissions(at: snapshotURL), 0o600)
+        XCTAssertEqual(try filePermissions(at: liveURL), 0o600)
+        XCTAssertEqual(try filePermissions(at: snapshotURL.deletingLastPathComponent()), 0o700)
+        XCTAssertEqual(try filePermissions(at: liveDirectory), 0o700)
+    }
+
+    func testExpiredActiveTokenUpdatesLiveAuthBeforeSnapshotWriteFailure() async throws {
+        let expiredAccess = try makeJWT(payload: [
+            "exp": Date().addingTimeInterval(-3600).timeIntervalSince1970,
+            "https://api.openai.com/auth": [
+                "chatgpt_account_id": "account-123",
+                "chatgpt_plan_type": "plus"
+            ]
+        ])
+        let freshAccess = try makeJWT(payload: [
+            "exp": Date().addingTimeInterval(3600).timeIntervalSince1970,
+            "https://api.openai.com/auth": [
+                "chatgpt_account_id": "account-123",
+                "chatgpt_plan_type": "pro"
+            ]
+        ])
+        let snapshotURL = try writeAuthJSON(accessToken: expiredAccess, refreshToken: "refresh-old")
+        let snapshotDirectory = snapshotURL.deletingLastPathComponent()
+        let liveDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexKeyringLive-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: liveDirectory, withIntermediateDirectories: true)
+        let liveURL = liveDirectory.appendingPathComponent("auth.json")
+        try FileManager.default.copyItem(at: snapshotURL, to: liveURL)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: snapshotDirectory.path)
+            try? FileManager.default.removeItem(at: snapshotDirectory)
+            try? FileManager.default.removeItem(at: liveDirectory)
+        }
+
+        MockURLProtocol.setHandler { request in
+            switch request.url?.path {
+            case "/oauth/token":
+                try FileManager.default.removeItem(at: snapshotURL)
+                try FileManager.default.removeItem(at: snapshotDirectory)
+                FileManager.default.createFile(
+                    atPath: snapshotDirectory.path,
+                    contents: Data("not a directory".utf8)
+                )
+                return try .json([
+                    "access_token": freshAccess,
+                    "refresh_token": "refresh-new"
+                ])
+            default:
+                XCTFail("unexpected request: \(request.url?.absoluteString ?? "<nil>")")
+                return .status(404)
+            }
+        }
+
+        let client = try makeClient()
+        do {
+            _ = try await client.queryQuota(
+                for: request(snapshotURL: snapshotURL, liveAuthFileURL: liveURL)
+            )
+            XCTFail("Expected snapshot persistence to fail.")
+        } catch CodexKeyringError.fileSystemFailure(let reason) {
+            XCTAssertTrue(reason.contains("Could not write refreshed auth snapshot"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(MockURLProtocol.requests.map { $0.url?.path }, ["/oauth/token"])
+        XCTAssertEqual(try tokenValue("access_token", in: liveURL), freshAccess)
+        XCTAssertEqual(try tokenValue("refresh_token", in: liveURL), "refresh-new")
+    }
+
+    func testEmptyRefreshAccessTokenFailsBeforeWritingSnapshot() async throws {
+        let expiredAccess = try makeJWT(payload: [
+            "exp": Date().addingTimeInterval(-3600).timeIntervalSince1970
+        ])
+        let snapshotURL = try writeAuthJSON(accessToken: expiredAccess, refreshToken: "refresh-old")
+        let originalData = try Data(contentsOf: snapshotURL)
+        MockURLProtocol.setHandler { request in
+            XCTAssertEqual(request.url?.path, "/oauth/token")
+            return try .json([
+                "access_token": "",
+                "refresh_token": "refresh-new"
+            ])
+        }
+
+        let client = try makeClient()
+
+        do {
+            _ = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+            XCTFail("Expected empty refresh access token to fail.")
+        } catch CodexKeyringError.quotaQueryFailed(let reason) {
+            XCTAssertEqual(reason, "Token refresh returned no access token.")
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(MockURLProtocol.requests.map { $0.url?.path }, ["/oauth/token"])
+        XCTAssertEqual(try Data(contentsOf: snapshotURL), originalData)
     }
 
     func testRefreshTokenReusedLeavesSnapshotUnchanged() async throws {
-        let expiredAccess = makeJWT(payload: [
+        let expiredAccess = try makeJWT(payload: [
             "exp": Date().addingTimeInterval(-3600).timeIntervalSince1970
         ])
         let snapshotURL = try writeAuthJSON(accessToken: expiredAccess, refreshToken: "refresh-old")
@@ -224,7 +519,7 @@ final class ChatGPTQuotaClientTests: XCTestCase {
             )
         }
 
-        let client = makeClient()
+        let client = try makeClient()
 
         do {
             _ = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
@@ -235,11 +530,136 @@ final class ChatGPTQuotaClientTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: snapshotURL), originalData)
     }
 
-    private func makeClient() -> ChatGPTQuotaClient {
-        ChatGPTQuotaClient(
-            baseURL: URL(string: "https://chatgpt.test/backend-api")!,
-            issuer: URL(string: "https://auth.test")!,
-            urlSession: MockURLProtocol.session
+    func testRefreshFailureSummarizesSafeOAuthDescription() async throws {
+        let expiredAccess = try makeJWT(payload: [
+            "exp": Date().addingTimeInterval(-3600).timeIntervalSince1970
+        ])
+        let snapshotURL = try writeAuthJSON(accessToken: expiredAccess, refreshToken: "refresh-old")
+        let originalData = try Data(contentsOf: snapshotURL)
+        MockURLProtocol.setHandler { request in
+            XCTAssertEqual(request.url?.path, "/oauth/token")
+            return try .json(
+                [
+                    "error": "invalid_grant",
+                    "error_description": "refresh token expired"
+                ],
+                statusCode: 401
+            )
+        }
+
+        let client = try makeClient()
+
+        do {
+            _ = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+            XCTFail("Expected refresh failure to require relogin.")
+        } catch CodexKeyringError.quotaRequiresRelogin(let reason) {
+            XCTAssertTrue(reason.contains("OAuth token endpoint returned HTTP 401"))
+            XCTAssertTrue(reason.contains("invalid_grant"))
+            XCTAssertTrue(reason.contains("refresh token expired"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+        XCTAssertEqual(try Data(contentsOf: snapshotURL), originalData)
+    }
+
+    func testRefreshFailureDoesNotEchoSensitiveOAuthDescription() async throws {
+        let expiredAccess = try makeJWT(payload: [
+            "exp": Date().addingTimeInterval(-3600).timeIntervalSince1970
+        ])
+        let snapshotURL = try writeAuthJSON(accessToken: expiredAccess, refreshToken: "refresh-old")
+        MockURLProtocol.setHandler { request in
+            XCTAssertEqual(request.url?.path, "/oauth/token")
+            return try .json(
+                [
+                    "error": "invalid_grant",
+                    "error_description": "refresh_token=secret-refresh-token"
+                ],
+                statusCode: 401
+            )
+        }
+
+        let client = try makeClient()
+
+        do {
+            _ = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+            XCTFail("Expected refresh failure to require relogin.")
+        } catch CodexKeyringError.quotaRequiresRelogin(let reason) {
+            XCTAssertTrue(reason.contains("OAuth token endpoint returned HTTP 401"))
+            XCTAssertTrue(reason.contains("invalid_grant"))
+            XCTAssertFalse(reason.contains("refresh_token"))
+            XCTAssertFalse(reason.contains("secret-refresh-token"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testMissingSnapshotThrowsDomainMissingErrorBeforeNetworkRequest() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexKeyringQuotaTests-\(UUID().uuidString)", isDirectory: true)
+        let snapshotURL = directory.appendingPathComponent("auth.json")
+        let client = try makeClient()
+
+        do {
+            _ = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+            XCTFail("Expected missing snapshot to fail.")
+        } catch CodexKeyringError.authFileMissing(let url) {
+            XCTAssertEqual(url, snapshotURL)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertTrue(MockURLProtocol.requests.isEmpty)
+    }
+
+    func testDirectorySnapshotThrowsDomainUnreadableErrorBeforeNetworkRequest() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexKeyringQuotaTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let snapshotURL = directory.appendingPathComponent("auth.json", isDirectory: true)
+        try FileManager.default.createDirectory(at: snapshotURL, withIntermediateDirectories: true)
+        let client = try makeClient()
+
+        do {
+            _ = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+            XCTFail("Expected directory snapshot to fail.")
+        } catch CodexKeyringError.authFileUnreadable {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertTrue(MockURLProtocol.requests.isEmpty)
+    }
+
+    func testMalformedSnapshotJSONThrowsDomainUnreadableErrorBeforeNetworkRequest() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CodexKeyringQuotaTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let snapshotURL = directory.appendingPathComponent("auth.json")
+        try Data("{".utf8).write(to: snapshotURL)
+        let client = try makeClient()
+
+        do {
+            _ = try await client.queryQuota(for: request(snapshotURL: snapshotURL))
+            XCTFail("Expected malformed snapshot to fail.")
+        } catch CodexKeyringError.authFileUnreadable {
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        XCTAssertTrue(MockURLProtocol.requests.isEmpty)
+    }
+
+    private func makeClient(
+        baseURL: URL? = nil,
+        ioQueue: DispatchQueue = DispatchQueue(label: "tests.ChatGPTQuotaClient.\(UUID().uuidString)")
+    ) throws -> ChatGPTQuotaClient {
+        try ChatGPTQuotaClient(
+            baseURL: baseURL ?? testURL("https://chatgpt.test/backend-api"),
+            issuer: testURL("https://auth.test"),
+            urlSession: MockURLProtocol.session,
+            ioQueue: ioQueue
         )
     }
 
@@ -247,7 +667,13 @@ final class ChatGPTQuotaClientTests: XCTestCase {
         snapshotURL: URL,
         liveAuthFileURL: URL? = nil
     ) -> AccountQuotaQueryRequest {
-        let id = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+        let id = UUID(uuid: (
+            0xAA, 0xAA, 0xAA, 0xAA,
+            0xBB, 0xBB,
+            0xCC, 0xCC,
+            0xDD, 0xDD,
+            0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE
+        ))
         let account = CodexAccount(
             id: id,
             alias: "Test",
@@ -332,12 +758,16 @@ private final class MockURLProtocol: URLProtocol {
             }
             Self.lock.withLock { Self.recordedRequests.append(request) }
             let response = try currentHandler(request)
-            let http = HTTPURLResponse(
-                url: request.url!,
-                statusCode: response.statusCode,
-                httpVersion: "HTTP/1.1",
-                headerFields: response.headers
-            )!
+            guard let url = request.url,
+                  let http = HTTPURLResponse(
+                      url: url,
+                      statusCode: response.statusCode,
+                      httpVersion: "HTTP/1.1",
+                      headerFields: response.headers
+                  )
+            else {
+                throw URLError(.badServerResponse)
+            }
             client?.urlProtocol(self, didReceive: http, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: response.data)
             client?.urlProtocolDidFinishLoading(self)
@@ -352,17 +782,61 @@ private final class MockURLProtocol: URLProtocol {
 private func writeAuthJSON(
     accessToken: String,
     refreshToken: String = "refresh-token",
-    idToken: String? = nil
+    idToken: String? = nil,
+    accountID: String? = "account-123"
 ) throws -> URL {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("CodexKeyringQuotaTests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let url = directory.appendingPathComponent("auth.json")
-    let idToken = idToken ?? makeJWT(payload: [
+    let idToken = try idToken ?? makeJWT(payload: [
         "email": "person@example.com",
         "https://api.openai.com/auth": [
             "chatgpt_plan_type": "plus",
             "chatgpt_account_id": "account-123"
+        ]
+    ])
+    var tokens: [String: Any] = [
+        "access_token": accessToken,
+        "refresh_token": refreshToken,
+        "id_token": idToken
+    ]
+    if let accountID {
+        tokens["account_id"] = accountID
+    }
+    let object: [String: Any] = [
+        "auth_mode": "chatgpt",
+        "tokens": tokens
+    ]
+    try JSONSerialization.data(withJSONObject: object).write(to: url)
+    return url
+}
+
+private func writeRefreshOnlyAuthJSON(refreshToken: String) throws -> URL {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("CodexKeyringQuotaTests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let url = directory.appendingPathComponent("auth.json")
+    let object: [String: Any] = [
+        "auth_mode": "chatgpt",
+        "tokens": [
+            "refresh_token": refreshToken
+        ]
+    ]
+    try JSONSerialization.data(withJSONObject: object).write(to: url)
+    return url
+}
+
+private func overwriteAuthJSON(
+    at url: URL,
+    accessToken: String,
+    refreshToken: String = "refresh-token",
+    idToken: String? = nil
+) throws {
+    let idToken = try idToken ?? makeJWT(payload: [
+        "email": "person@example.com",
+        "https://api.openai.com/auth": [
+            "chatgpt_plan_type": "plus"
         ]
     ])
     let object: [String: Any] = [
@@ -370,12 +844,10 @@ private func writeAuthJSON(
         "tokens": [
             "access_token": accessToken,
             "refresh_token": refreshToken,
-            "id_token": idToken,
-            "account_id": "account-123"
+            "id_token": idToken
         ]
     ]
     try JSONSerialization.data(withJSONObject: object).write(to: url)
-    return url
 }
 
 private func tokenValue(_ key: String, in url: URL) throws -> String? {
@@ -385,17 +857,32 @@ private func tokenValue(_ key: String, in url: URL) throws -> String? {
     return tokens?[key] as? String
 }
 
-private func makeJWT(payload: [String: Any]) -> String {
+private func filePermissions(at url: URL) throws -> Int {
+    let value = try XCTUnwrap(
+        FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber
+    )
+    return value.intValue & 0o777
+}
+
+private func testURL(
+    _ string: String,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws -> URL {
+    try XCTUnwrap(URL(string: string), file: file, line: line)
+}
+
+private func makeJWT(payload: [String: Any]) throws -> String {
     let header = ["alg": "none", "typ": "JWT"]
     return [
-        base64URLEncodedJSON(header),
-        base64URLEncodedJSON(payload),
+        try base64URLEncodedJSON(header),
+        try base64URLEncodedJSON(payload),
         "signature"
     ].joined(separator: ".")
 }
 
-private func base64URLEncodedJSON(_ object: [String: Any]) -> String {
-    let data = try! JSONSerialization.data(withJSONObject: object)
+private func base64URLEncodedJSON(_ object: [String: Any]) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: object)
     return data.base64EncodedString()
         .replacingOccurrences(of: "+", with: "-")
         .replacingOccurrences(of: "/", with: "_")

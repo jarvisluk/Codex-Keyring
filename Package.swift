@@ -42,6 +42,10 @@ let package = Package(
         .testTarget(
             name: "CodexKeyringInfrastructureTests",
             dependencies: ["CodexKeyringInfrastructure"]
+        ),
+        .testTarget(
+            name: "CodexKeyringUITests",
+            dependencies: ["CodexKeyringUI"]
         )
     ]
 )

@@ -3,24 +3,33 @@ import CodexKeyringDomain
 @testable import CodexKeyringInfrastructure
 
 final class LiveCodexAgentPreferencesPortTests: XCTestCase {
-    private var workDir: URL!
+    private let workDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("codex-keyring-prefs-tests-\(UUID().uuidString)", isDirectory: true)
 
     override func setUpWithError() throws {
-        workDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("codex-keyring-prefs-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
     }
 
     override func tearDownWithError() throws {
-        if let workDir, FileManager.default.fileExists(atPath: workDir.path) {
+        if FileManager.default.fileExists(atPath: workDir.path) {
             try FileManager.default.removeItem(at: workDir)
         }
     }
 
-    private func makePort() -> LiveCodexAgentPreferencesPort {
+    private func makePort(
+        ioQueue: DispatchQueue = DispatchQueue(label: "tests.LiveCodexAgentPreferencesPort.\(UUID().uuidString)")
+    ) -> LiveCodexAgentPreferencesPort {
         LiveCodexAgentPreferencesPort(
             configTomlURL: workDir.appendingPathComponent("config.toml"),
-            globalStateURL: workDir.appendingPathComponent(".codex-global-state.json")
+            globalStateURL: workDir.appendingPathComponent(".codex-global-state.json"),
+            ioQueue: ioQueue
+        )
+    }
+
+    private func makePort(configDir: String, stateDir: String) -> LiveCodexAgentPreferencesPort {
+        LiveCodexAgentPreferencesPort(
+            configTomlURL: workDir.appendingPathComponent(configDir, isDirectory: true).appendingPathComponent("config.toml"),
+            globalStateURL: workDir.appendingPathComponent(stateDir, isDirectory: true).appendingPathComponent(".codex-global-state.json")
         )
     }
 
@@ -28,6 +37,42 @@ final class LiveCodexAgentPreferencesPortTests: XCTestCase {
         let port = makePort()
         let prefs = try await port.captureCurrent()
         XCTAssertTrue(prefs.isEmpty)
+    }
+
+    func testCaptureCurrentThrowsWhenConfigPathIsDirectory() async throws {
+        let configURL = workDir.appendingPathComponent("config.toml", isDirectory: true)
+        try FileManager.default.createDirectory(at: configURL, withIntermediateDirectories: true)
+
+        do {
+            _ = try await makePort().captureCurrent()
+            XCTFail("Expected capture to fail when config.toml is not a file.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Expected config.toml to be a file"))
+        }
+    }
+
+    func testCaptureCurrentThrowsWhenStatePathIsDirectory() async throws {
+        let stateURL = workDir.appendingPathComponent(".codex-global-state.json", isDirectory: true)
+        try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
+
+        do {
+            _ = try await makePort().captureCurrent()
+            XCTFail("Expected capture to fail when global-state is not a file.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Expected global-state.json to be a file"))
+        }
+    }
+
+    func testCaptureProjectArrangementThrowsWhenStatePathIsDirectory() async throws {
+        let stateURL = workDir.appendingPathComponent(".codex-global-state.json", isDirectory: true)
+        try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
+
+        do {
+            _ = try await makePort().captureProjectArrangement()
+            XCTFail("Expected project arrangement capture to fail when global-state is not a file.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Expected global-state.json to be a file"))
+        }
     }
 
     func testCaptureReadsFromBothFiles() async throws {
@@ -54,6 +99,33 @@ final class LiveCodexAgentPreferencesPortTests: XCTestCase {
         XCTAssertEqual(prefs.sandboxMode, "workspace-write")
         XCTAssertEqual(prefs.agentMode, "full-access")
         XCTAssertEqual(prefs.skipFullAccessConfirm, true)
+    }
+
+    func testCaptureCurrentRunsOnConfiguredIOQueue() async throws {
+        let tomlURL = workDir.appendingPathComponent("config.toml")
+        try "model = \"old\"\n".write(to: tomlURL, atomically: true, encoding: .utf8)
+        let ioQueue = DispatchQueue(label: "tests.LiveCodexAgentPreferencesPort.suspended")
+        let releaseQueue = blockSerialQueue(ioQueue, description: "agent preferences io queue")
+        var didReleaseQueue = false
+        defer {
+            if !didReleaseQueue {
+                releaseQueue()
+            }
+        }
+        let port = makePort(ioQueue: ioQueue)
+
+        let captureStarted = expectation(description: "agent preferences capture started")
+        let captureTask = Task {
+            captureStarted.fulfill()
+            return try await port.captureCurrent()
+        }
+        await fulfillment(of: [captureStarted], timeout: 1)
+        try "model = \"queued\"\n".write(to: tomlURL, atomically: true, encoding: .utf8)
+
+        releaseQueue()
+        didReleaseQueue = true
+        let prefs = try await captureTask.value
+        XCTAssertEqual(prefs.model, "queued")
     }
 
     func testApplyPreservesUnrelatedTomlAndJsonKeys() async throws {
@@ -94,15 +166,18 @@ final class LiveCodexAgentPreferencesPortTests: XCTestCase {
         XCTAssertTrue(updatedToml.contains("memories = true"))
 
         let updatedStateData = try Data(contentsOf: stateURL)
-        let parsed = try JSONSerialization.jsonObject(with: updatedStateData) as! [String: Any]
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: updatedStateData) as? [String: Any])
         XCTAssertEqual(parsed["electron-saved-workspace-roots"] as? [String], ["/Users/me/x"])
-        let atom = parsed["electron-persisted-atom-state"] as! [String: Any]
+        let atom = try XCTUnwrap(parsed["electron-persisted-atom-state"] as? [String: Any])
         XCTAssertEqual(atom["some-unrelated"] as? Int, 42)
         XCTAssertEqual(
             (atom["agent-mode-by-host-id"] as? [String: Any])?["local"] as? String,
             "full-access"
         )
         XCTAssertEqual((atom["skip-full-access-confirm"] as? NSNumber)?.boolValue, true)
+        XCTAssertEqual(try filePermissions(at: tomlURL), 0o600)
+        XCTAssertEqual(try filePermissions(at: stateURL), 0o600)
+        XCTAssertEqual(try filePermissions(at: workDir), 0o700)
     }
 
     func testCaptureAndRestoreProjectArrangement() async throws {
@@ -140,26 +215,139 @@ final class LiveCodexAgentPreferencesPortTests: XCTestCase {
         try await port.restoreProjectArrangement(arrangement)
 
         let updatedStateData = try Data(contentsOf: stateURL)
-        let parsed = try JSONSerialization.jsonObject(with: updatedStateData) as! [String: Any]
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: updatedStateData) as? [String: Any])
         XCTAssertEqual(parsed["project-order"] as? [String], ["/before-a", "remote-before"])
         XCTAssertEqual(parsed["pinned-project-ids"] as? [String], ["/before-a"])
         XCTAssertEqual(parsed["electron-saved-workspace-roots"] as? [String], ["/keep"])
-        let atom = parsed["electron-persisted-atom-state"] as! [String: Any]
+        let atom = try XCTUnwrap(parsed["electron-persisted-atom-state"] as? [String: Any])
         XCTAssertEqual(atom["sidebar-organize-mode-v1"] as? String, "manual")
         XCTAssertEqual(
             (atom["agent-mode-by-host-id"] as? [String: Any])?["local"] as? String,
             "full-access"
         )
+        XCTAssertEqual(try filePermissions(at: stateURL), 0o600)
+        XCTAssertEqual(try filePermissions(at: workDir), 0o700)
     }
 
     func testApplyIsNoopForEmptyPreferences() async throws {
         let tomlURL = workDir.appendingPathComponent("config.toml")
         try "model = \"gpt-5\"\n".write(to: tomlURL, atomically: true, encoding: .utf8)
-        let originalSize = try FileManager.default.attributesOfItem(atPath: tomlURL.path)[.size] as! Int
+        let originalSize = try fileSize(at: tomlURL)
 
         try await makePort().apply(AccountAgentPreferences())
 
-        let afterSize = try FileManager.default.attributesOfItem(atPath: tomlURL.path)[.size] as! Int
+        let afterSize = try fileSize(at: tomlURL)
         XCTAssertEqual(afterSize, originalSize)
+    }
+
+    func testApplyThrowsWhenConfigPathIsDirectory() async throws {
+        let configURL = workDir.appendingPathComponent("config.toml", isDirectory: true)
+        try FileManager.default.createDirectory(at: configURL, withIntermediateDirectories: true)
+
+        do {
+            try await makePort().apply(AccountAgentPreferences(model: "gpt-5.5"))
+            XCTFail("Expected apply to fail when config.toml is not a file.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Expected config.toml to be a file"))
+        }
+    }
+
+    func testApplyThrowsWhenStatePathIsDirectory() async throws {
+        let stateURL = workDir.appendingPathComponent(".codex-global-state.json", isDirectory: true)
+        try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
+
+        do {
+            try await makePort().apply(AccountAgentPreferences(agentMode: "full-access"))
+            XCTFail("Expected apply to fail when global-state is not a file.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Expected global-state.json to be a file"))
+        }
+    }
+
+    func testApplyRefusesToOverwriteNonObjectGlobalStateParent() async throws {
+        let stateURL = workDir.appendingPathComponent(".codex-global-state.json")
+        let originalState = #"{"electron-persisted-atom-state":"legacy-value"}"#
+        try originalState.write(to: stateURL, atomically: true, encoding: .utf8)
+
+        do {
+            try await makePort().apply(AccountAgentPreferences(agentMode: "full-access"))
+            XCTFail("Expected apply to fail when a global-state parent is not an object.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Expected JSON object at electron-persisted-atom-state"))
+        }
+
+        XCTAssertEqual(try String(contentsOf: stateURL, encoding: .utf8), originalState)
+    }
+
+    func testApplyDoesNotPartiallyWriteTomlWhenGlobalStateIsInvalid() async throws {
+        let tomlURL = workDir.appendingPathComponent("config.toml")
+        let stateURL = workDir.appendingPathComponent(".codex-global-state.json")
+        let originalToml = "model = \"gpt-5\"\n"
+        let originalState = #"{"electron-persisted-atom-state":"legacy-value"}"#
+        try originalToml.write(to: tomlURL, atomically: true, encoding: .utf8)
+        try originalState.write(to: stateURL, atomically: true, encoding: .utf8)
+
+        do {
+            try await makePort().apply(AccountAgentPreferences(
+                model: "gpt-5.5",
+                agentMode: "full-access"
+            ))
+            XCTFail("Expected apply to fail before writing any prepared updates.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Expected JSON object at electron-persisted-atom-state"))
+        }
+
+        XCTAssertEqual(try String(contentsOf: tomlURL, encoding: .utf8), originalToml)
+        XCTAssertEqual(try String(contentsOf: stateURL, encoding: .utf8), originalState)
+    }
+
+    func testRestoreProjectArrangementThrowsWhenStatePathIsDirectory() async throws {
+        let stateURL = workDir.appendingPathComponent(".codex-global-state.json", isDirectory: true)
+        try FileManager.default.createDirectory(at: stateURL, withIntermediateDirectories: true)
+
+        do {
+            try await makePort().restoreProjectArrangement(
+                CodexProjectArrangement(projectOrder: ["/project"])
+            )
+            XCTFail("Expected project arrangement restore to fail when global-state is not a file.")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Expected global-state.json to be a file"))
+        }
+    }
+
+    func testApplyCreatesDistinctConfigAndStateDirectoriesPrivately() async throws {
+        let port = makePort(configDir: "config-home", stateDir: "state-home")
+        let configURL = workDir
+            .appendingPathComponent("config-home", isDirectory: true)
+            .appendingPathComponent("config.toml")
+        let stateURL = workDir
+            .appendingPathComponent("state-home", isDirectory: true)
+            .appendingPathComponent(".codex-global-state.json")
+
+        try await port.apply(AccountAgentPreferences(
+            model: "gpt-5.5",
+            agentMode: "full-access"
+        ))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stateURL.path))
+        XCTAssertEqual(try filePermissions(at: configURL), 0o600)
+        XCTAssertEqual(try filePermissions(at: stateURL), 0o600)
+        XCTAssertEqual(try filePermissions(at: configURL.deletingLastPathComponent()), 0o700)
+        XCTAssertEqual(try filePermissions(at: stateURL.deletingLastPathComponent()), 0o700)
+    }
+
+    private func filePermissions(at url: URL) throws -> Int {
+        let value = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber
+        )
+        return value.intValue & 0o777
+    }
+
+    private func fileSize(at url: URL) throws -> Int {
+        let value = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber
+        )
+        return value.intValue
     }
 }

@@ -5,8 +5,7 @@ final class CodexGlobalStateEditorTests: XCTestCase {
     private let editor = CodexGlobalStateEditor()
 
     func testReadsStringAtNestedPath() {
-        let data = #"{"electron-persisted-atom-state":{"agent-mode-by-host-id":{"local":"full-access"}}}"#
-            .data(using: .utf8)!
+        let data = Data(#"{"electron-persisted-atom-state":{"agent-mode-by-host-id":{"local":"full-access"}}}"#.utf8)
         XCTAssertEqual(
             editor.readString(at: ["electron-persisted-atom-state", "agent-mode-by-host-id", "local"], in: data),
             "full-access"
@@ -15,8 +14,7 @@ final class CodexGlobalStateEditorTests: XCTestCase {
     }
 
     func testReadsBoolAtNestedPath() {
-        let data = #"{"electron-persisted-atom-state":{"skip-full-access-confirm":true,"some-int":1}}"#
-            .data(using: .utf8)!
+        let data = Data(#"{"electron-persisted-atom-state":{"skip-full-access-confirm":true,"some-int":1}}"#.utf8)
         XCTAssertEqual(
             editor.readBool(at: ["electron-persisted-atom-state", "skip-full-access-confirm"], in: data),
             true
@@ -26,32 +24,32 @@ final class CodexGlobalStateEditorTests: XCTestCase {
     }
 
     func testReadsStringArrayAtPath() {
-        let data = #"{"project-order":["/a","remote-id"],"bad":["/a",1]}"#
-            .data(using: .utf8)!
+        let data = Data(#"{"project-order":["/a","remote-id"],"bad":["/a",1]}"#.utf8)
         XCTAssertEqual(editor.readStringArray(at: ["project-order"], in: data), ["/a", "remote-id"])
         XCTAssertNil(editor.readStringArray(at: ["bad"], in: data))
     }
 
     func testWritePreservesOtherKeysAndCreatesMissingParents() throws {
-        let original = #"{"electron-persisted-atom-state":{"some-unrelated":42,"agent-mode-by-host-id":{"local":"auto-review"}},"electron-saved-workspace-roots":["/x","/y"]}"#
-            .data(using: .utf8)!
+        let original = Data(
+            #"{"electron-persisted-atom-state":{"some-unrelated":42,"agent-mode-by-host-id":{"local":"auto-review"}},"electron-saved-workspace-roots":["/x","/y"]}"#.utf8
+        )
         let updated = try editor.writing(
             "full-access",
             at: ["electron-persisted-atom-state", "agent-mode-by-host-id", "local"],
             in: original
         )
 
-        let parsed = try JSONSerialization.jsonObject(with: updated) as! [String: Any]
-        let atom = parsed["electron-persisted-atom-state"] as! [String: Any]
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: updated) as? [String: Any])
+        let atom = try XCTUnwrap(parsed["electron-persisted-atom-state"] as? [String: Any])
         XCTAssertEqual(atom["some-unrelated"] as? Int, 42)
-        let agentMode = atom["agent-mode-by-host-id"] as! [String: Any]
+        let agentMode = try XCTUnwrap(atom["agent-mode-by-host-id"] as? [String: Any])
         XCTAssertEqual(agentMode["local"] as? String, "full-access")
-        let workspaces = parsed["electron-saved-workspace-roots"] as! [String]
+        let workspaces = try XCTUnwrap(parsed["electron-saved-workspace-roots"] as? [String])
         XCTAssertEqual(workspaces, ["/x", "/y"])
     }
 
     func testWriteCanCreateBrandNewBranch() throws {
-        let original = #"{"electron-persisted-atom-state":{}}"#.data(using: .utf8)!
+        let original = Data(#"{"electron-persisted-atom-state":{}}"#.utf8)
         let updated = try editor.writing(
             "full-access",
             at: ["electron-persisted-atom-state", "agent-mode-by-host-id", "local"],
@@ -63,8 +61,25 @@ final class CodexGlobalStateEditorTests: XCTestCase {
         )
     }
 
+    func testWriteRefusesToReplaceExistingNonObjectParent() throws {
+        let original = Data(#"{"electron-persisted-atom-state":"legacy-value"}"#.utf8)
+
+        do {
+            _ = try editor.writing(
+                "full-access",
+                at: ["electron-persisted-atom-state", "agent-mode-by-host-id", "local"],
+                in: original
+            )
+            XCTFail("Expected non-object parent to fail instead of being overwritten.")
+        } catch CodexGlobalStateEditor.EditorError.parentIsNotJSONObject(let path) {
+            XCTAssertEqual(path, ["electron-persisted-atom-state"])
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testWriteBooleanRoundtrips() throws {
-        let original = #"{"electron-persisted-atom-state":{}}"#.data(using: .utf8)!
+        let original = Data(#"{"electron-persisted-atom-state":{}}"#.utf8)
         let updated = try editor.writing(
             NSNumber(value: true),
             at: ["electron-persisted-atom-state", "skip-full-access-confirm"],
@@ -89,7 +104,7 @@ final class CodexGlobalStateEditorTests: XCTestCase {
     }
 
     func testWriteNilRemovesLeafKey() throws {
-        let original = #"{"a":{"b":"c","d":"e"}}"#.data(using: .utf8)!
+        let original = Data(#"{"a":{"b":"c","d":"e"}}"#.utf8)
         let updated = try editor.writing(nil, at: ["a", "b"], in: original)
         XCTAssertNil(editor.readString(at: ["a", "b"], in: updated))
         XCTAssertEqual(editor.readString(at: ["a", "d"], in: updated), "e")

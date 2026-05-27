@@ -4,6 +4,7 @@ import CodexKeyringDomain
 struct SidebarView: View {
     @EnvironmentObject private var store: AccountStore
     @Binding var selection: UUID?
+    private let columnWidth: CGFloat = 288
 
     var body: some View {
         List(selection: $selection) {
@@ -19,7 +20,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+        .navigationSplitViewColumnWidth(min: columnWidth, ideal: columnWidth, max: columnWidth)
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
                 CurrentAuthFooter()
@@ -146,7 +147,7 @@ private struct AccountRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 if let quota = quotaState?.sidebarSummary {
-                    Label(quota, systemImage: quotaState?.health.systemImage ?? "gauge.medium")
+                    Text(quota)
                         .font(.caption2)
                         .foregroundStyle(quotaState?.health.tint ?? .secondary)
                         .lineLimit(1)

@@ -26,6 +26,7 @@ struct AccountDetailView: View {
             .frame(maxWidth: 760, alignment: .leading)
         }
         .navigationTitle(account.displayName)
+        .hidesWindowToolbarTitle()
         .onAppear {
             aliasDraft = account.alias
         }
@@ -282,5 +283,16 @@ struct AccountDetailView: View {
         }
         .padding(16)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func hidesWindowToolbarTitle() -> some View {
+        if #available(macOS 15.0, *) {
+            toolbar(removing: .title)
+        } else {
+            self
+        }
     }
 }

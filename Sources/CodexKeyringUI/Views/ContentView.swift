@@ -42,7 +42,7 @@ public struct ContentView: View {
             }
         }
         .toolbar {
-            ToolbarItemGroup {
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     startNewLogin()
                 } label: {

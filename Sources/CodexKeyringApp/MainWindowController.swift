@@ -45,6 +45,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         )
         window.identifier = NSUserInterfaceItemIdentifier("main")
         window.title = "Codex Keyring"
+        window.titleVisibility = .hidden
         window.minSize = NSSize(width: 920, height: 600)
         window.isReleasedWhenClosed = false
         window.contentViewController = NSHostingController(rootView: contentView)

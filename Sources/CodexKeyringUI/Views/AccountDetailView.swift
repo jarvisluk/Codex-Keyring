@@ -37,7 +37,6 @@ struct AccountDetailView: View {
             .padding(24)
             .frame(maxWidth: 760, alignment: .leading)
         }
-        .navigationTitle("Codex Keyring")
         .onAppear {
             aliasDraft = account.alias
         }

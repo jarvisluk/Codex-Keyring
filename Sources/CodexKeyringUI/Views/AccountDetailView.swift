@@ -13,17 +13,29 @@ struct AccountDetailView: View {
         store.activeAccount?.id == account.id
     }
 
+    private var cleanedAliasDraft: String {
+        aliasDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var hasAliasChange: Bool {
+        cleanedAliasDraft != account.alias
+    }
+
+    private var canSubmitAliasRename: Bool {
+        store.canRename(account, to: cleanedAliasDraft)
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: KeyringStyle.Spacing.detailSection) {
                 header
                 actions
                 quota
                 metadata
                 safety
             }
-            .padding(24)
-            .frame(maxWidth: 760, alignment: .leading)
+            .padding(KeyringStyle.Spacing.detailPagePadding)
+            .frame(maxWidth: KeyringStyle.Layout.detailContentMaxWidth, alignment: .leading)
         }
         .navigationTitle(account.displayName)
         .onAppear {
@@ -47,10 +59,14 @@ struct AccountDetailView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: KeyringStyle.Spacing.small) {
+            HStack(alignment: .firstTextBaseline, spacing: KeyringStyle.Spacing.compact) {
                 Text(account.displayName)
-                    .font(.largeTitle.bold())
+                    .font(.title.bold())
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .layoutPriority(1)
+
                 if isActive {
                     Label("Active", systemImage: "checkmark.circle.fill")
                         .labelStyle(.titleAndIcon)
@@ -62,18 +78,22 @@ struct AccountDetailView: View {
             Text(account.displayEmail)
                 .font(.title3)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
     }
 
     private var actions: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: KeyringStyle.Spacing.section) {
             HStack {
                 Button {
-                    store.switchTo(account, restartCodexApp: true)
+                    store.switchTo(account, restartCodexApp: store.settings.restartCodexAppAfterSwitch)
                 } label: {
                     Label(isActive ? "Switch Again" : "Switch", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .buttonStyle(.borderedProminent)
+                .help(switchHelpText)
+                .disabled(!store.canSwitch(to: account))
 
                 Button(role: .destructive) {
                     showingRemoveConfirmation = true
@@ -83,6 +103,7 @@ struct AccountDetailView: View {
                 }
                 .buttonStyle(.bordered)
                 .tint(.red)
+                .disabled(!store.canRemove(account))
             }
 
             HStack {
@@ -92,47 +113,67 @@ struct AccountDetailView: View {
                     .onSubmit {
                         submitAliasRename()
                     }
-                    .frame(maxWidth: 280)
-                Button("Rename") {
+                    .frame(maxWidth: KeyringStyle.Layout.aliasFieldMaxWidth)
+
+                Button {
                     submitAliasRename()
+                } label: {
+                    Label("Rename", systemImage: "pencil")
                 }
+                .disabled(!canSubmitAliasRename)
             }
         }
     }
 
     private func submitAliasRename() {
+        guard hasAliasChange else {
+            aliasDraft = account.alias
+            isAliasFieldFocused = false
+            return
+        }
+        guard canSubmitAliasRename else { return }
         isAliasFieldFocused = false
-        store.rename(account, to: aliasDraft)
+        store.rename(account, to: cleanedAliasDraft)
+    }
+
+    private var switchHelpText: String {
+        if store.settings.restartCodexAppAfterSwitch {
+            return "Switch auth and restart Codex App so it reloads the account immediately."
+        }
+        return "Switch Codex CLI auth only. Restart Codex App yourself if it is already open."
     }
 
     private var metadata: some View {
-        Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 10) {
-            detailRow("Auth mode", account.authMode)
-            detailRow("Plan", account.plan)
-            detailRow("Account ID", account.accountIdentifier)
-            detailRow("Fingerprint", account.shortFingerprint)
+        let details = AccountDetailMetadataPresentation(account: account)
+        return Grid(
+            alignment: .leading,
+            horizontalSpacing: KeyringStyle.Grid.metadataHorizontalSpacing,
+            verticalSpacing: KeyringStyle.Grid.locationVerticalSpacing
+        ) {
+            detailRow("Auth mode", details.authMode)
+            detailRow("Plan", details.plan)
+            detailRow("Account ID", details.accountIdentifier)
+            detailRow("Fingerprint", details.fingerprint)
             detailRow("Saved", formatDate(account.createdAt))
             detailRow("Updated", formatDate(account.updatedAt))
             if let expiry = account.tokenExpiresAt {
                 detailRow("Token expires", formatDate(expiry))
             }
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .keyringSurface(.regular)
     }
 
     private var quota: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: KeyringStyle.Spacing.section) {
             HStack {
-                Label("Quota", systemImage: "gauge.medium")
-                    .font(.headline)
+                KeyringSectionHeader("Quota", systemImage: "gauge.medium")
                 Spacer()
                 Button {
                     store.refreshQuotasNow()
                 } label: {
                     Label("Refresh Quotas", systemImage: "arrow.clockwise")
                 }
-                .disabled(!store.settings.allowNetworkQuotaAPIs || store.isQuotaRefreshInProgress)
+                .disabled(!store.canRefreshQuotas)
             }
 
             if !store.settings.allowNetworkQuotaAPIs {
@@ -145,15 +186,14 @@ struct AccountDetailView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .keyringSurface(.regular)
     }
 
     @ViewBuilder
     private func quotaStateContent(_ state: AccountQuotaState) -> some View {
         switch state.phase {
         case .loading:
-            HStack(spacing: 8) {
+            HStack(spacing: KeyringStyle.Spacing.small) {
                 ProgressView()
                     .controlSize(.small)
                 Text("Refreshing quota...")
@@ -173,7 +213,7 @@ struct AccountDetailView: View {
     }
 
     private func quotaSnapshot(_ snapshot: AccountQuotaSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: KeyringStyle.Spacing.contentGroup) {
             if let primary = snapshot.primaryBucket {
                 quotaBucket(primary, prominent: true)
             }
@@ -193,12 +233,16 @@ struct AccountDetailView: View {
     }
 
     private func quotaBucket(_ bucket: QuotaBucket, prominent: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: KeyringStyle.Spacing.compact) {
             HStack {
                 Label(bucket.displayName, systemImage: bucket.health.systemImage)
                     .foregroundStyle(bucket.health.tint)
                     .font(prominent ? .headline : .subheadline.weight(.semibold))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+
                 Spacer()
+
                 Text(bucket.health.label)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(bucket.health.tint)
@@ -227,7 +271,7 @@ struct AccountDetailView: View {
     }
 
     private func quotaWindow(_ window: QuotaWindow) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: KeyringStyle.Spacing.inlineTight) {
             HStack {
                 Text(window.durationLabel)
                 Spacer()
@@ -267,20 +311,48 @@ struct AccountDetailView: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .textSelection(.enabled)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var safety: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Token-safe by design", systemImage: "lock.shield")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: KeyringStyle.Spacing.small) {
+            KeyringSectionHeader("Token-safe by design", systemImage: "lock.shield")
             Text("The app stores auth snapshots locally and only shows metadata such as email, plan, and fingerprint. It does not display access tokens or API keys.")
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             Text("Snapshots live in \(store.storageLocations.accountsDirectoryPath). Backups before switching live in \(store.storageLocations.backupsDirectoryPath).")
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(16)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .keyringSurface(.thin)
+    }
+}
+
+struct AccountDetailMetadataPresentation: Equatable {
+    let authMode: String
+    let plan: String
+    let accountIdentifier: String
+    let fingerprint: String
+
+    init(account: CodexAccount) {
+        authMode = Self.display(account.authMode, fallback: "Unknown")
+        plan = Self.display(account.plan, fallback: "Unknown")
+        accountIdentifier = Self.display(account.accountIdentifier, fallback: "Unknown")
+        fingerprint = Self.fingerprint(account.fingerprint)
+    }
+
+    private static func display(_ value: String, fallback: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : trimmed
+    }
+
+    private static func fingerprint(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Unknown" }
+        return String(trimmed.prefix(10))
     }
 }

@@ -13,6 +13,7 @@ struct SidebarView: View {
                     AccountRow(
                         account: account,
                         isActive: store.activeAccount?.id == account.id,
+                        isSelected: selection == account.id,
                         quotaState: store.quotaStates[account.id]
                     )
                         .tag(account.id)
@@ -63,7 +64,7 @@ private struct CurrentAuthFooter: View {
         if store.savedAccountForCurrentAuth != nil {
             return "checkmark.circle.fill"
         }
-        return "person.crop.circle.badge.plus"
+        return "circle"
     }
 
     private var statusTint: Color {
@@ -76,19 +77,12 @@ private struct CurrentAuthFooter: View {
 
     private var subtitle: String {
         if let savedAccount = store.savedAccountForCurrentAuth {
-            return "Saved as \(savedAccount.displayName)"
+            return "Added as \(savedAccount.displayName)"
         }
         if store.currentAuthMetadata != nil {
-            return "Not in credentials"
+            return "Not added"
         }
         return store.storageLocations.codexAuthPath
-    }
-
-    private var contextMenuTitle: String {
-        if store.savedAccountForCurrentAuth != nil {
-            return "Already in Credentials"
-        }
-        return "Add to Credentials"
     }
 
     var body: some View {
@@ -116,14 +110,6 @@ private struct CurrentAuthFooter: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-        .contextMenu {
-            Button {
-                store.addCurrentAccount(alias: nil)
-            } label: {
-                Label(contextMenuTitle, systemImage: "plus.circle")
-            }
-            .disabled(!store.canSaveCurrentAuth)
-        }
         .help(store.storageLocations.codexAuthPath)
     }
 }
@@ -131,12 +117,23 @@ private struct CurrentAuthFooter: View {
 private struct AccountRow: View {
     var account: CodexAccount
     var isActive: Bool
+    var isSelected: Bool
     var quotaState: AccountQuotaState?
+
+    private var iconTint: Color {
+        if isSelected { return .primary }
+        return isActive ? .green : .secondary
+    }
+
+    private var quotaTint: Color {
+        if isSelected { return .primary }
+        return quotaState?.health.tint ?? .secondary
+    }
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: isActive ? "checkmark.circle.fill" : "person.crop.circle")
-                .foregroundStyle(isActive ? .green : .secondary)
+                .foregroundStyle(iconTint)
                 .frame(width: 18)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -149,7 +146,7 @@ private struct AccountRow: View {
                 if let quota = quotaState?.sidebarSummary {
                     Text(quota)
                         .font(.caption2)
-                        .foregroundStyle(quotaState?.health.tint ?? .secondary)
+                        .foregroundStyle(quotaTint)
                         .lineLimit(1)
                 }
             }

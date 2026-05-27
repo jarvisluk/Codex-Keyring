@@ -20,7 +20,6 @@ struct AccountDetailView: View {
                 actions
                 quota
                 metadata
-                safety
             }
             .padding(24)
             .frame(maxWidth: 760, alignment: .leading)
@@ -271,19 +270,6 @@ struct AccountDetailView: View {
         }
     }
 
-    private var safety: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Token-safe by design", systemImage: "lock.shield")
-                .font(.headline)
-            Text("The app stores auth snapshots locally and only shows metadata such as email, plan, and fingerprint. It does not display access tokens or API keys.")
-                .foregroundStyle(.secondary)
-            Text("Snapshots live in \(store.storageLocations.accountsDirectoryPath). Backups before switching live in \(store.storageLocations.backupsDirectoryPath).")
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-        .padding(16)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
-    }
 }
 
 private extension View {

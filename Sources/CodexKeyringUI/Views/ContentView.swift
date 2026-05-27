@@ -4,6 +4,7 @@ import CodexKeyringDomain
 public struct ContentView: View {
     public init() {}
     @EnvironmentObject private var store: AccountStore
+    @EnvironmentObject private var settingsPresentation: SettingsPresentationStore
     @SceneStorage("selectedAccountID") private var selectedAccountIDString: String?
     @State private var showingAddCurrentSheet = false
 
@@ -29,13 +30,24 @@ public struct ContentView: View {
     }
 
     public var body: some View {
-        NavigationSplitView {
-            SidebarView(
-                selection: selectedAccountID,
-                onAddCurrentLogin: showAddCurrentLoginSheet
-            )
-        } detail: {
-            detailContent
+        ZStack {
+            NavigationSplitView {
+                SidebarView(
+                    selection: selectedAccountID,
+                    onAddCurrentLogin: showAddCurrentLoginSheet
+                )
+            } detail: {
+                detailContent
+            }
+                .disabled(settingsPresentation.isPresented)
+
+            if settingsPresentation.isPresented {
+                SettingsModalOverlay {
+                    settingsPresentation.dismiss()
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .zIndex(1)
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -47,7 +59,7 @@ public struct ContentView: View {
                         systemImage: store.isLoginInProgress ? "hourglass" : "plus.circle"
                     )
                 }
-                .disabled(!store.canLoginNewAccount)
+                .disabled(!store.canLoginNewAccount || settingsPresentation.isPresented)
                 .help("Open Codex login and save the new account without switching the current auth.")
 
                 Button {
@@ -55,7 +67,7 @@ public struct ContentView: View {
                 } label: {
                     ToolbarActionLabel("Import", systemImage: "square.and.arrow.down")
                 }
-                .disabled(!store.canImportAccount)
+                .disabled(!store.canImportAccount || settingsPresentation.isPresented)
                 .help("Import Codex auth.json")
 
                 Button {
@@ -67,7 +79,7 @@ public struct ContentView: View {
                         isLoading: store.isRefreshInProgress
                     )
                 }
-                .disabled(!store.canRefreshAccounts)
+                .disabled(!store.canRefreshAccounts || settingsPresentation.isPresented)
                 .help("Refresh accounts")
             }
         }
@@ -85,6 +97,7 @@ public struct ContentView: View {
         .onChange(of: store.activeAccountID) {
             reconcileSelection()
         }
+        .animation(.easeInOut(duration: 0.16), value: settingsPresentation.isPresented)
     }
 
     @ViewBuilder
@@ -115,6 +128,38 @@ public struct ContentView: View {
     private func showAddCurrentLoginSheet() {
         guard store.canAddCurrentLogin else { return }
         showingAddCurrentSheet = true
+    }
+}
+
+private struct SettingsModalOverlay: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.16)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture {}
+
+            SettingsView(onDismiss: onDismiss)
+                .background(
+                    .regularMaterial,
+                    in: RoundedRectangle(
+                        cornerRadius: KeyringStyle.Radius.card,
+                        style: .continuous
+                    )
+                )
+                .overlay {
+                    RoundedRectangle(
+                        cornerRadius: KeyringStyle.Radius.card,
+                        style: .continuous
+                    )
+                    .stroke(.quaternary, lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.22), radius: 28, x: 0, y: 18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onExitCommand(perform: onDismiss)
     }
 }
 

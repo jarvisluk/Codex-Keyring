@@ -5,6 +5,7 @@ import CodexKeyringDomain
 public struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var store: AccountStore
+    @EnvironmentObject private var settingsPresentation: SettingsPresentationStore
 
     public init() {}
 
@@ -103,8 +104,9 @@ public struct MenuBarView: View {
 
             Divider()
 
-            SettingsLink {
-                Text("Settings")
+            Button("Settings") {
+                openManagerWindow()
+                settingsPresentation.present()
             }
 
             Button("Quit") {

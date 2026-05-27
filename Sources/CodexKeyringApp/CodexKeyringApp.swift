@@ -1,8 +1,5 @@
-import AppKit
 import SwiftUI
 import CodexKeyringUI
-import CodexKeyringInfrastructure
-import CodexKeyringDomain
 
 @main
 struct CodexKeyringApp: App {
@@ -10,93 +7,41 @@ struct CodexKeyringApp: App {
     @StateObject private var store: AccountStore
 
     init() {
-        _store = StateObject(wrappedValue: Self.makeStore())
+        let store = AccountStoreFactory.makeStore()
+        _store = StateObject(wrappedValue: store)
+        MainWindowController.shared.configure(store: store)
     }
 
     var body: some Scene {
-        Window("Codex Keyring", id: "main") {
-            ContentView()
-                .environmentObject(store)
-                .frame(minWidth: 920, minHeight: 600)
-        }
-        .defaultSize(width: 1040, height: 680)
-        .windowResizability(.contentMinSize)
-        .commands {
-            CommandGroup(after: .appInfo) {
-                Button("Refresh Accounts") {
-                    store.refresh()
-                }
-                .keyboardShortcut("r", modifiers: [.command])
-                .disabled(store.isRefreshInProgress)
-            }
-        }
-
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(store)
         } label: {
-            Image(systemName: store.activeAccount == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle.badge.checkmark")
+            Image(systemName: menuBarSystemImage)
+                .accessibilityLabel(menuBarStatusLabel)
+                .help(menuBarStatusLabel)
         }
         .menuBarExtraStyle(.menu)
+        .commands {
+            AccountCommands(store: store)
+        }
 
         Settings {
             SettingsView()
                 .environmentObject(store)
         }
     }
-}
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        DispatchQueue.main.async {
-            NSApp.activate(ignoringOtherApps: true)
+    private var menuBarSystemImage: String {
+        store.activeAccount == nil
+            ? "person.crop.circle.badge.questionmark"
+            : "person.crop.circle.badge.checkmark"
+    }
+
+    private var menuBarStatusLabel: String {
+        guard let activeAccount = store.activeAccount else {
+            return "Codex Keyring: no active saved account"
         }
-    }
-
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        false
-    }
-}
-
-private extension CodexKeyringApp {
-    @MainActor
-    static func makeStore() -> AccountStore {
-        try? AppPaths.ensureDirectories()
-        CodexKeyringLog.bootstrapFileSink()
-        let appLogger = CodexKeyringLog.makeAppLogger(.app)
-        appLogger.info("Codex Keyring launching; logFile=\(AppPaths.currentLogFile.path)")
-
-        let repository = FileSystemManifestRepository()
-        let installer = LiveCodexAuthInstaller()
-        let authReader = AuthFileParser()
-        let agentPreferencesPort = LiveCodexAgentPreferencesPort()
-        return AccountStore(
-            repository: repository,
-            installer: installer,
-            authReader: authReader,
-            appController: NSWorkspaceCodexAppController(),
-            launchAtLoginController: SMAppServiceLaunchAtLogin(),
-            loginService: ChatGPTOAuthLoginService(),
-            agentPreferencesPort: agentPreferencesPort,
-            quotaQuery: ChatGPTQuotaClient(),
-            storageLocations: AccountStorageLocations(
-                codexAuthPath: AppPaths.codexAuthFile.path,
-                applicationSupportPath: AppPaths.applicationSupportDirectory.path,
-                accountsDirectoryPath: AppPaths.accountsDirectory.path,
-                backupsDirectoryPath: AppPaths.backupsDirectory.path,
-                logsDirectoryPath: AppPaths.logsDirectory.path,
-                currentLogFilePath: AppPaths.currentLogFile.path
-            ),
-            openAuthURL: { url in
-                try await MainActor.run {
-                    guard NSWorkspace.shared.open(url) else {
-                        throw CodexKeyringError.codexLoginFailed(reason: "Could not open \(url.absoluteString).")
-                    }
-                }
-            },
-            logService: CodexKeyringLog.makeAppLogger(.store),
-            liveAuthWatcher: LiveAuthFileWatcher()
-        )
+        return "Codex Keyring: \(activeAccount.displayName) active"
     }
 }

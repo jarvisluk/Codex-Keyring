@@ -3,7 +3,6 @@ import SwiftUI
 import CodexKeyringDomain
 
 public struct MenuBarView: View {
-    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var store: AccountStore
 
     public init() {}
@@ -19,20 +18,34 @@ public struct MenuBarView: View {
                 openManagerWindow()
             }
 
-            Button("Add Current Login") {
-                store.addCurrentAccount(alias: nil)
+            Divider()
+
+            Button("Add New Login") {
+                openAddNewLoginFlow()
             }
-            .disabled(!store.canSaveCurrentAuth)
+            .disabled(!store.canLoginNewAccount)
+
+            Button("Save Current Login") {
+                openAddCurrentLoginSheet()
+            }
+            .disabled(!store.canAddCurrentLogin)
+
+            Button("Import Auth Snapshot...") {
+                openImportAuthSnapshotPanel()
+            }
+            .disabled(!store.canImportAccount)
+
+            Divider()
 
             Button("Refresh") {
                 store.refresh()
             }
-            .disabled(store.isRefreshInProgress)
+            .disabled(!store.canRefreshAccounts)
 
             Button("Refresh Quotas") {
                 store.refreshQuotasNow()
             }
-            .disabled(!store.settings.allowNetworkQuotaAPIs || store.isQuotaRefreshInProgress)
+            .disabled(!store.canRefreshQuotas)
 
             if !store.accounts.isEmpty {
                 Divider()
@@ -40,21 +53,43 @@ public struct MenuBarView: View {
                     let isActive = store.activeAccount?.id == account.id
                     Button {
                         guard !isActive else { return }
-                        store.switchTo(account, restartCodexApp: true)
+                        store.switchTo(account, restartCodexApp: store.settings.restartCodexAppAfterSwitch)
                     } label: {
                         Label {
-                            Text(menuTitle(for: account))
+                            Text(MenuBarAccountPresentation(account: account).title)
                         } icon: {
                             Image(systemName: isActive ? "checkmark.circle.fill" : "person.crop.circle")
                                 .foregroundStyle(isActive ? .green : .secondary)
                         }
                     }
+                    .disabled(isActive || !store.canSwitch(to: account))
 
                     if let quotaState = store.quotaStates[account.id],
                        let quotaLine = quotaState.menuDetailSummary {
                         Text(quotaLine)
                             .font(.caption)
                             .foregroundStyle(quotaState.health.tint)
+                    }
+                }
+            }
+
+            if let status = MenuBarStatusPresentation.make(
+                statusMessage: store.statusMessage,
+                lastError: store.lastError,
+                isBusy: store.isStatusBusy
+            ) {
+                Divider()
+                Label {
+                    Text(status.title)
+                } icon: {
+                    Image(systemName: status.systemImage)
+                        .foregroundStyle(status.tint)
+                }
+                .help(status.help)
+
+                if status.isError {
+                    Button("Clear Error") {
+                        store.clearError()
                     }
                 }
             }
@@ -71,21 +106,74 @@ public struct MenuBarView: View {
         }
     }
 
-    private func menuTitle(for account: CodexAccount) -> String {
-        let title = account.alias.isEmpty ? account.displayEmail : account.alias
-        return title.count > 30 ? String(title.prefix(27)) + "..." : title
+    private func openManagerWindow() {
+        MainWindowRequest.showMainWindow()
     }
 
-    private func openManagerWindow() {
-        if let existing = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
-            if existing.isMiniaturized {
-                existing.deminiaturize(nil)
-            }
-            existing.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
+    private func openAddNewLoginFlow() {
+        guard store.canLoginNewAccount else { return }
+        MainWindowRequest.showMainWindow()
+        MainWindowRequest.runAfterCurrentMainActorTurn {
+            MainWindowRequest.startNewLogin()
         }
-        openWindow(id: "main")
-        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func openAddCurrentLoginSheet() {
+        MainWindowRequest.showMainWindow()
+        MainWindowRequest.runAfterCurrentMainActorTurn {
+            MainWindowRequest.showAddCurrentLoginSheet()
+        }
+    }
+
+    private func openImportAuthSnapshotPanel() {
+        guard store.canImportAccount else { return }
+        MainWindowRequest.showMainWindow()
+        MainWindowRequest.runAfterCurrentMainActorTurn {
+            AuthImportPanel.chooseAndImport(using: store)
+        }
+    }
+}
+
+struct MenuBarAccountPresentation: Equatable {
+    let title: String
+
+    init(account: CodexAccount) {
+        title = account.displayName.cappedMenuBarText
+    }
+}
+
+struct MenuBarStatusPresentation {
+    let title: String
+    let help: String
+    let systemImage: String
+    let tint: Color
+    let isError: Bool
+
+    static func make(
+        statusMessage: String,
+        lastError: String?,
+        isBusy: Bool
+    ) -> MenuBarStatusPresentation? {
+        if let lastError {
+            return MenuBarStatusPresentation(
+                title: lastError.cappedMenuBarText,
+                help: lastError,
+                systemImage: "exclamationmark.triangle.fill",
+                tint: .red,
+                isError: true
+            )
+        }
+
+        let trimmedStatus = statusMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isBusy || !trimmedStatus.isEmpty && trimmedStatus != "Ready." else {
+            return nil
+        }
+        return MenuBarStatusPresentation(
+            title: trimmedStatus.cappedMenuBarText,
+            help: trimmedStatus,
+            systemImage: isBusy ? "hourglass" : "checkmark.circle",
+            tint: isBusy ? .secondary : .green,
+            isError: false
+        )
     }
 }

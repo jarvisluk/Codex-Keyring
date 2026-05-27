@@ -1,5 +1,4 @@
 import Foundation
-import os
 import CodexKeyringDomain
 
 /// `LiveAuthWatching` backed by `DispatchSource.makeFileSystemObjectSource`.
@@ -14,7 +13,7 @@ public final class LiveAuthFileWatcher: LiveAuthWatching, @unchecked Sendable {
     private let queue: DispatchQueue
     private let debounceInterval: DispatchTimeInterval
     private let reattachInterval: DispatchTimeInterval
-    private let log = CodexKeyringLog.make(.installer)
+    private let log = CodexKeyringLog.makeAppLogger(.liveAuth)
 
     private let stateLock = NSLock()
     private var source: DispatchSourceFileSystemObject?
@@ -107,7 +106,7 @@ public final class LiveAuthFileWatcher: LiveAuthWatching, @unchecked Sendable {
         stateLock.unlock()
 
         src.resume()
-        log.debug("watching live auth at \(self.url.path, privacy: .public)")
+        log.debug("watching live auth at \(url.path)")
         scheduleChange()
     }
 

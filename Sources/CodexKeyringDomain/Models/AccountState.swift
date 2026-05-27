@@ -25,8 +25,8 @@ public struct AccountState: Equatable, Sendable {
            let account = accounts.first(where: { $0.id == id }) {
             return account
         }
-        if let fingerprint = currentAuthMetadata?.fingerprint {
-            return accounts.first(where: { $0.fingerprint == fingerprint })
+        if let currentAuthMetadata {
+            return AccountIdentityMatcher.firstMatchingAccount(for: currentAuthMetadata, in: accounts)
         }
         return nil
     }

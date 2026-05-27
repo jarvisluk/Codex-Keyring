@@ -26,23 +26,27 @@ public struct RefreshStateUseCase: Sendable {
 
     public func callAsFunction() async throws -> AccountState {
         var manifest = try await repository.load()
-        let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
+        let currentAuth = try await readLiveAuthIfPresent()
 
         // Keep the saved snapshot for whichever account currently owns the
         // live auth file in lock-step with the live bytes. This is how we
         // capture the rotating OAuth refresh token before Codex App's next
         // refresh invalidates whatever copy we already had on disk.
         if let currentAuth {
-            _ = try? await syncLiveAuth.sync(
-                liveMetadata: currentAuth,
-                liveURL: installer.liveAuthFileURL,
-                manifest: &manifest
-            )
+            do {
+                _ = try await syncLiveAuth.sync(
+                    liveMetadata: currentAuth,
+                    liveURL: installer.liveAuthFileURL,
+                    manifest: &manifest
+                )
+            } catch {
+                throw CodexKeyringError.currentAuthSyncFailed(reason: error.localizedDescription)
+            }
         }
 
         let refreshedMetadata: AuthMetadata?
         if currentAuth != nil {
-            refreshedMetadata = try? await authReader.read(from: installer.liveAuthFileURL)
+            refreshedMetadata = try await readLiveAuthIfPresent()
         } else {
             refreshedMetadata = nil
         }
@@ -53,5 +57,13 @@ public struct RefreshStateUseCase: Sendable {
             settings: manifest.settings,
             currentAuthMetadata: refreshedMetadata
         )
+    }
+
+    private func readLiveAuthIfPresent() async throws -> AuthMetadata? {
+        do {
+            return try await authReader.read(from: installer.liveAuthFileURL)
+        } catch CodexKeyringError.authFileMissing {
+            return nil
+        }
     }
 }

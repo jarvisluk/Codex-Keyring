@@ -26,6 +26,19 @@ public struct AccountStorageLocations: Sendable {
     }
 }
 
+public struct URLAccessScope: Sendable {
+    private let stopAccessing: @MainActor @Sendable () -> Void
+
+    public init(stopAccessing: @escaping @MainActor @Sendable () -> Void) {
+        self.stopAccessing = stopAccessing
+    }
+
+    @MainActor
+    func stop() {
+        stopAccessing()
+    }
+}
+
 @MainActor
 public final class AccountStore: ObservableObject {
     @Published public private(set) var accounts: [CodexAccount] = []
@@ -34,6 +47,8 @@ public final class AccountStore: ObservableObject {
     @Published public private(set) var isRefreshInProgress = false
     @Published public private(set) var isLoginInProgress = false
     @Published public private(set) var isQuotaRefreshInProgress = false
+    @Published public private(set) var isLogExportInProgress = false
+    @Published public private(set) var isOperationInProgress = false
     @Published public private(set) var settings = AppSettings()
     @Published public private(set) var quotaStates: [UUID: AccountQuotaState] = [:]
     @Published public var statusMessage: String = "Ready."
@@ -47,6 +62,7 @@ public final class AccountStore: ObservableObject {
     private let openAuthURL: @Sendable (URL) async throws -> Void
     private let logService: (any AppLogService)?
     private let liveAuthWatcher: any LiveAuthWatching
+    private let operationQueue = AccountStoreOperationQueue()
 
     private let refreshState: RefreshStateUseCase
     private let addAccount: AddAccountUseCase
@@ -59,6 +75,9 @@ public final class AccountStore: ObservableObject {
     private let refreshAccountQuotas: RefreshAccountQuotasUseCase
     private var quotaRefreshTask: Task<Void, Never>?
     private var quotaRefreshConfiguration: QuotaRefreshConfiguration?
+    private var queuedOperationCount = 0
+    private var isLiveAuthSyncScheduled = false
+    private var needsLiveAuthSyncAfterCurrent = false
 
     public init(
         repository: any AccountRepository,
@@ -72,7 +91,8 @@ public final class AccountStore: ObservableObject {
         storageLocations: AccountStorageLocations,
         openAuthURL: @escaping @Sendable (URL) async throws -> Void,
         logService: (any AppLogService)? = nil,
-        liveAuthWatcher: any LiveAuthWatching = NoopLiveAuthWatcher()
+        liveAuthWatcher: any LiveAuthWatching = NoopLiveAuthWatcher(),
+        startupError: Error? = nil
     ) {
         self.installer = installer
         self.launchAtLoginController = launchAtLoginController
@@ -130,6 +150,9 @@ public final class AccountStore: ObservableObject {
         self.settings.launchAtLogin = launchAtLoginController.isEnabled
         logService?.info("AccountStore initialised; launch-at-login supported=\(launchAtLoginController.isSupported)")
         refresh()
+        if let startupError {
+            setError(startupError)
+        }
         startLiveAuthWatcher()
     }
 
@@ -149,24 +172,103 @@ public final class AccountStore: ObservableObject {
 
     public var savedAccountForCurrentAuth: CodexAccount? {
         guard let currentAuthMetadata else { return nil }
-        if let exact = accounts.first(where: { $0.fingerprint == currentAuthMetadata.fingerprint }) {
-            return exact
-        }
-
-        let identifier = currentAuthMetadata.accountIdentifier
-        guard isStableAccountIdentifier(identifier) else { return nil }
-        return accounts.first { account in
-            account.accountIdentifier == identifier
-                && isStableAccountIdentifier(account.accountIdentifier)
-        }
+        return AccountIdentityMatcher.firstMatchingAccount(for: currentAuthMetadata, in: accounts)
     }
 
     public var canSaveCurrentAuth: Bool {
         currentAuthMetadata != nil && savedAccountForCurrentAuth == nil
     }
 
+    public var canAddCurrentLogin: Bool {
+        canSaveCurrentAuth && !isAccountWorkInProgress
+    }
+
+    public var canLoginNewAccount: Bool {
+        !isAccountWorkInProgress
+    }
+
+    public var canImportAccount: Bool {
+        !isAccountWorkInProgress
+    }
+
+    public var canRefreshAccounts: Bool {
+        !isAccountWorkInProgress
+    }
+
+    public var canRefreshQuotas: Bool {
+        settings.allowNetworkQuotaAPIs
+            && !accounts.isEmpty
+            && !isAccountWorkInProgress
+    }
+
+    public func canSwitch(to account: CodexAccount) -> Bool {
+        accounts.contains(where: { $0.id == account.id }) && !isAccountWorkInProgress
+    }
+
+    public func canRemove(_ account: CodexAccount) -> Bool {
+        accounts.contains(where: { $0.id == account.id }) && !isAccountWorkInProgress
+    }
+
+    public func canRename(_ account: CodexAccount, to newAlias: String) -> Bool {
+        let cleanedAlias = newAlias.trimmingCharacters(in: .whitespacesAndNewlines)
+        return accounts.contains(where: { $0.id == account.id })
+            && cleanedAlias != account.alias
+            && !isAccountWorkInProgress
+    }
+
+    public var canEditPreferences: Bool {
+        !isOperationInProgress
+    }
+
+    public var canEditQuotaRefreshInterval: Bool {
+        settings.allowNetworkQuotaAPIs && canEditPreferences
+    }
+
+    public func canSetRestartCodexAppAfterSwitch(to enabled: Bool) -> Bool {
+        settings.restartCodexAppAfterSwitch != enabled && canEditPreferences
+    }
+
+    public func canSetAllowNetworkQuotaAPIs(to enabled: Bool) -> Bool {
+        settings.allowNetworkQuotaAPIs != enabled && canEditPreferences
+    }
+
+    public func canSetQuotaRefreshInterval(to minutes: Int) -> Bool {
+        let normalizedMinutes = AppSettings.normalizedQuotaRefreshInterval(minutes)
+        return settings.quotaRefreshIntervalMinutes != normalizedMinutes
+            && canEditQuotaRefreshInterval
+    }
+
+    public func canSetPreserveAgentPreferencesPerAccount(to enabled: Bool) -> Bool {
+        settings.preserveAgentPreferencesPerAccount != enabled && canEditPreferences
+    }
+
+    public func canSetLaunchAtLogin(to enabled: Bool) -> Bool {
+        isLaunchAtLoginSupported
+            && settings.launchAtLogin != enabled
+            && canEditPreferences
+    }
+
+    public var canExportLogs: Bool {
+        isLoggingAvailable && !isLogExportInProgress
+    }
+
+    public var isStatusBusy: Bool {
+        isOperationInProgress
+            || isRefreshInProgress
+            || isLoginInProgress
+            || isQuotaRefreshInProgress
+            || isLogExportInProgress
+    }
+
+    private var isAccountWorkInProgress: Bool {
+        isOperationInProgress
+            || isRefreshInProgress
+            || isLoginInProgress
+            || isQuotaRefreshInProgress
+    }
+
     public func refresh() {
-        guard !isRefreshInProgress else { return }
+        guard canRefreshAccounts else { return }
         isRefreshInProgress = true
         statusMessage = "Refreshing account state..."
         run {
@@ -174,13 +276,15 @@ public final class AccountStore: ObservableObject {
             self.logService?.debug("refreshing account state")
             let state = try await self.refreshState()
             self.apply(state)
-            self.statusMessage = "Refreshed accounts."
+            if self.lastError == nil && !self.isQuotaRefreshInProgress {
+                self.statusMessage = "Refreshed accounts."
+            }
             self.logService?.info("refreshed; accounts=\(state.accounts.count), activeID=\(state.activeAccountID?.uuidString ?? "<none>")")
         }
     }
 
     public func loginNewCodexAccount() {
-        guard !isLoginInProgress else { return }
+        guard canLoginNewAccount else { return }
         isLoginInProgress = true
         lastError = nil
         statusMessage = "Opening Codex login..."
@@ -195,15 +299,29 @@ public final class AccountStore: ObservableObject {
                 }
             }
             self.apply(result.state)
-            self.statusMessage = "Saved new Codex login as \(result.savedAlias). Current Codex auth was not switched."
+            var message = "Saved new Codex login as \(result.savedAlias). Current Codex auth was not switched."
+            if let cleanupWarningReason = result.cleanupWarningReason {
+                message += " Temporary login files could not be cleaned up: \(cleanupWarningReason)"
+                self.logService?.warning("login staging cleanup warning: \(cleanupWarningReason)")
+            }
+            self.statusMessage = message
             self.logService?.info("saved new login alias=\(result.savedAlias) without switching active auth")
-        } onFailure: {
+        } onFailure: { _ in
             self.isLoginInProgress = false
         }
     }
 
     public func addCurrentAccount(alias requestedAlias: String?) {
+        guard !isAccountWorkInProgress else { return }
+        guard currentAuthMetadata != nil else {
+            lastError = nil
+            statusMessage = "No readable Codex auth.json to save."
+            logService?.info("add current auth skipped; live auth is unreadable")
+            return
+        }
+
         if let savedAccount = savedAccountForCurrentAuth {
+            lastError = nil
             statusMessage = "Current Codex auth is already saved as \(savedAccount.displayName)."
             return
         }
@@ -212,28 +330,46 @@ public final class AccountStore: ObservableObject {
         run {
             let result = try await self.addAccount(
                 sourceURL: self.installer.liveAuthFileURL,
-                requestedAlias: requestedAlias
+                requestedAlias: requestedAlias,
+                activate: true
             )
             self.apply(result.state)
-            self.statusMessage = "Saved current Codex auth as \(result.savedAlias)."
+            self.statusMessage = self.addAccountMessage(
+                base: "Saved current Codex auth as \(result.savedAlias).",
+                result: result
+            )
             self.logService?.info("saved current auth as alias=\(result.savedAlias)")
         }
     }
 
-    public func importAccount(from url: URL, alias requestedAlias: String? = nil) {
+    public func importAccount(
+        from url: URL,
+        alias requestedAlias: String? = nil,
+        accessScope: URLAccessScope? = nil
+    ) {
+        guard canImportAccount else {
+            accessScope?.stop()
+            return
+        }
         logService?.info("importing account from \(url.lastPathComponent) (requestedAlias=\(requestedAlias ?? "<auto>"))")
         run {
+            defer { accessScope?.stop() }
             let result = try await self.addAccount(
                 sourceURL: url,
-                requestedAlias: requestedAlias
+                requestedAlias: requestedAlias,
+                activate: false
             )
             self.apply(result.state)
-            self.statusMessage = "Imported account \(result.savedAlias)."
+            self.statusMessage = self.addAccountMessage(
+                base: "Imported account \(result.savedAlias). Current Codex auth was not switched.",
+                result: result
+            )
             self.logService?.info("imported alias=\(result.savedAlias) from \(url.lastPathComponent)")
         }
     }
 
     public func switchTo(_ account: CodexAccount, restartCodexApp: Bool) {
+        guard canSwitch(to: account) else { return }
         logService?.info("switching to alias=\(account.alias) (restartCodexApp=\(restartCodexApp))")
         run {
             let result = try await self.switchAccount(
@@ -247,6 +383,7 @@ public final class AccountStore: ObservableObject {
     }
 
     public func remove(_ account: CodexAccount) {
+        guard canRemove(account) else { return }
         logService?.info("removing alias=\(account.alias)")
         run {
             let result = try await self.removeAccount(accountID: account.id)
@@ -259,16 +396,28 @@ public final class AccountStore: ObservableObject {
     }
 
     public func rename(_ account: CodexAccount, to newAlias: String) {
-        logService?.info("renaming alias=\(account.alias) -> \(newAlias)")
+        let cleanedAlias = newAlias.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard canRename(account, to: cleanedAlias) else { return }
+        logService?.info("renaming alias=\(account.alias) -> \(cleanedAlias)")
         run {
-            let result = try await self.renameAccount(accountID: account.id, newAlias: newAlias)
+            let result = try await self.renameAccount(accountID: account.id, newAlias: cleanedAlias)
             self.apply(result.state)
-            self.statusMessage = "Renamed account to \(result.newAlias)."
-            self.logService?.info("renamed to alias=\(result.newAlias)")
+            if result.didRename {
+                let displayName = result.state.accounts.first { $0.id == account.id }?.displayName
+                    ?? result.newAlias
+                self.statusMessage = result.newAlias.isEmpty
+                    ? "Cleared alias. Account will show as \(displayName)."
+                    : "Renamed account to \(displayName)."
+                self.logService?.info("renamed to alias=\(result.newAlias)")
+            } else {
+                self.statusMessage = "Account alias is already \(result.newAlias)."
+                self.logService?.info("rename skipped; alias already \(result.newAlias)")
+            }
         }
     }
 
     public func setRestartCodexAppAfterSwitch(_ enabled: Bool) {
+        guard canSetRestartCodexAppAfterSwitch(to: enabled) else { return }
         run {
             let settings = try await self.updateSettings.setRestartCodexAppAfterSwitch(enabled)
             self.apply(settings)
@@ -280,6 +429,7 @@ public final class AccountStore: ObservableObject {
     }
 
     public func setAllowNetworkQuotaAPIs(_ enabled: Bool) {
+        guard canSetAllowNetworkQuotaAPIs(to: enabled) else { return }
         run {
             let settings = try await self.updateSettings.setAllowNetworkQuotaAPIs(enabled)
             self.apply(settings)
@@ -291,6 +441,7 @@ public final class AccountStore: ObservableObject {
     }
 
     public func setQuotaRefreshIntervalMinutes(_ minutes: Int) {
+        guard canSetQuotaRefreshInterval(to: minutes) else { return }
         run {
             let settings = try await self.updateSettings.setQuotaRefreshIntervalMinutes(minutes)
             self.apply(settings)
@@ -300,6 +451,7 @@ public final class AccountStore: ObservableObject {
     }
 
     public func setPreserveAgentPreferencesPerAccount(_ enabled: Bool) {
+        guard canSetPreserveAgentPreferencesPerAccount(to: enabled) else { return }
         run {
             let settings = try await self.updateSettings.setPreserveAgentPreferencesPerAccount(enabled)
             self.apply(settings)
@@ -311,6 +463,7 @@ public final class AccountStore: ObservableObject {
     }
 
     public func setLaunchAtLogin(_ enabled: Bool) {
+        guard canSetLaunchAtLogin(to: enabled) else { return }
         run {
             try self.launchAtLoginController.setEnabled(enabled)
             let actualValue = self.launchAtLoginController.isEnabled
@@ -318,7 +471,7 @@ public final class AccountStore: ObservableObject {
             self.apply(settings)
             self.statusMessage = actualValue ? "Launch at login enabled." : "Launch at login disabled."
             self.logService?.info("setting launchAtLogin=\(actualValue) (requested=\(enabled))")
-        } onFailure: {
+        } onFailure: { _ in
             var settings = self.settings
             settings.launchAtLogin = self.launchAtLoginController.isEnabled
             self.settings = settings
@@ -326,21 +479,46 @@ public final class AccountStore: ObservableObject {
     }
 
     public func clearError() {
+        if let lastError, statusMessage == lastError {
+            statusMessage = "Ready."
+        }
         lastError = nil
+    }
+
+    public func reportUserFacingError(_ error: Error) {
+        setError(error)
     }
 
     // MARK: - Quota
 
     public func refreshQuotasNow() {
+        refreshQuotas(allowDuringAccountWork: false)
+    }
+
+    private func refreshQuotas(allowDuringAccountWork: Bool) {
         guard settings.allowNetworkQuotaAPIs else {
+            lastError = nil
             quotaStates = [:]
             statusMessage = "Network quota API calls are disabled."
             return
         }
-        guard !isQuotaRefreshInProgress else { return }
+        guard !accounts.isEmpty else {
+            lastError = nil
+            quotaStates = [:]
+            statusMessage = "No saved accounts to refresh quotas for."
+            return
+        }
+        if allowDuringAccountWork {
+            guard !isQuotaRefreshInProgress else { return }
+        } else {
+            guard canRefreshQuotas else { return }
+        }
 
+        let preserveExistingError = allowDuringAccountWork && lastError != nil
         isQuotaRefreshInProgress = true
-        statusMessage = "Refreshing account quotas..."
+        if !preserveExistingError {
+            statusMessage = "Refreshing account quotas..."
+        }
         let chatGPTAccountIDs = accounts
             .filter { $0.authMode == "chatgpt" }
             .map(\.id)
@@ -348,17 +526,23 @@ public final class AccountStore: ObservableObject {
             quotaStates[accountID] = .loading(accountID: accountID)
         }
 
-        run {
+        run(
+            clearErrorOnStart: !preserveExistingError,
+            reportErrorOnFailure: !preserveExistingError
+        ) {
             defer { self.isQuotaRefreshInProgress = false }
             self.logService?.debug("refreshing account quotas")
             let result = try await self.refreshAccountQuotas()
             self.accounts = result.accounts
             self.quotaStates = result.states
+            if !preserveExistingError && self.lastError == nil {
+                self.statusMessage = self.quotaRefreshMessage(for: result)
+            }
             let successfulCount = result.states.values.filter { $0.phase == .available }.count
-            self.statusMessage = "Refreshed quota for \(successfulCount) account\(successfulCount == 1 ? "" : "s")."
             self.logService?.info("quota refresh complete; accounts=\(result.states.count), successful=\(successfulCount)")
-        } onFailure: {
+        } onFailure: { error in
             self.isQuotaRefreshInProgress = false
+            self.markLoadingQuotaStatesFailed(error)
         }
     }
 
@@ -373,14 +557,31 @@ public final class AccountStore: ObservableObject {
     }
 
     private func handleLiveAuthChange() {
+        guard !isLiveAuthSyncScheduled else {
+            needsLiveAuthSyncAfterCurrent = true
+            logService?.debug("live auth file changed while sync is pending; coalescing follow-up")
+            return
+        }
+
+        isLiveAuthSyncScheduled = true
         logService?.debug("live auth file changed; syncing active snapshot")
-        run {
+        run(clearErrorOnStart: false) {
+            defer {
+                self.isLiveAuthSyncScheduled = false
+                if self.needsLiveAuthSyncAfterCurrent {
+                    self.needsLiveAuthSyncAfterCurrent = false
+                    self.handleLiveAuthChange()
+                }
+            }
             let result = try await self.syncLiveAuthUseCase()
-            if result.didUpdateSnapshot || result.didReassignActive {
+            if result.didUpdateSnapshot || result.didUpdateMetadata || result.didReassignActive {
                 let state = try await self.refreshState()
                 self.apply(state)
                 if result.didUpdateSnapshot {
                     self.logService?.info("captured rotated refresh token into snapshot id=\(result.updatedAccountID?.uuidString ?? "<none>")")
+                }
+                if result.didUpdateMetadata {
+                    self.logService?.info("refreshed live auth metadata for account id=\(result.updatedAccountID?.uuidString ?? "<none>")")
                 }
                 if result.didReassignActive {
                     self.logService?.info("reconciled active account to id=\(result.updatedAccountID?.uuidString ?? "<none>")")
@@ -408,21 +609,27 @@ public final class AccountStore: ObservableObject {
     /// Export the rolling log files (current + retained generations) into the
     /// chosen destination as a single combined text file.
     public func exportLogs(to destination: URL) {
+        guard !isLogExportInProgress else { return }
+        lastError = nil
         guard let logService else {
             setError(CodexKeyringError.fileSystemFailure(reason: "Logging is not initialised; nothing to export."))
             return
         }
+        isLogExportInProgress = true
         statusMessage = "Exporting logs..."
         logService.info("user requested log export to \(destination.lastPathComponent)")
-        Task.detached { [weak self] in
+
+        Task.detached(priority: .utility) { [weak self] in
             do {
                 try logService.exportLogs(to: destination)
                 await MainActor.run {
+                    self?.isLogExportInProgress = false
                     self?.statusMessage = "Logs exported to \(destination.path)."
                 }
                 logService.info("log export complete at \(destination.path)")
             } catch {
                 await MainActor.run {
+                    self?.isLogExportInProgress = false
                     self?.setError(error)
                 }
                 logService.error("log export failed: \(error.localizedDescription)")
@@ -431,32 +638,51 @@ public final class AccountStore: ObservableObject {
     }
 
     private func run(
-        _ operation: @escaping () async throws -> Void,
-        onFailure: (() -> Void)? = nil
+        clearErrorOnStart: Bool = true,
+        reportErrorOnFailure: Bool = true,
+        _ operation: @escaping @MainActor @Sendable () async throws -> Void,
+        onFailure: (@MainActor @Sendable (Error) -> Void)? = nil
     ) {
-        Task {
-            do {
-                try await operation()
-            } catch {
-                onFailure?()
-                setError(error)
+        if clearErrorOnStart {
+            lastError = nil
+        }
+        beginQueuedOperation()
+        operationQueue.enqueue {
+            defer { self.finishQueuedOperation() }
+            try await operation()
+        } onFailure: { [weak self] error in
+            onFailure?(error)
+            if reportErrorOnFailure {
+                self?.setError(error)
+            } else {
+                self?.logService?.error("background operation failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    private func beginQueuedOperation() {
+        queuedOperationCount += 1
+        isOperationInProgress = true
+    }
+
+    private func finishQueuedOperation() {
+        queuedOperationCount = max(0, queuedOperationCount - 1)
+        isOperationInProgress = queuedOperationCount > 0
     }
 
     private func apply(_ state: AccountState) {
         accounts = state.accounts
         activeAccountID = state.activeAccountID
         currentAuthMetadata = state.currentAuthMetadata
+        pruneQuotaStates()
         apply(state.settings)
     }
 
     private func apply(_ settings: AppSettings) {
-        let previous = self.settings
         var resolved = settings
         resolved.launchAtLogin = launchAtLoginController.isEnabled
         self.settings = resolved
-        configureQuotaRefresh(previous: previous, current: resolved)
+        configureQuotaRefresh(current: resolved)
     }
 
     private func switchMessage(
@@ -464,7 +690,12 @@ public final class AccountStore: ObservableObject {
         restartWasRequested: Bool
     ) -> String {
         let base: String
-        if let restartOutcome = result.restartOutcome {
+        if let restartFailureReason = result.restartFailureReason {
+            let switchedPrefix = result.wasAlreadyActive
+                ? "\(result.switchedAlias) was already the active Codex auth"
+                : "Switched Codex CLI auth to \(result.switchedAlias)"
+            base = "\(switchedPrefix), but Codex App could not be restarted: \(restartFailureReason)"
+        } else if let restartOutcome = result.restartOutcome {
             base = message(for: restartOutcome)
         } else if result.wasAlreadyActive {
             base = "\(result.switchedAlias) was already the active Codex auth."
@@ -473,10 +704,28 @@ public final class AccountStore: ObservableObject {
         } else {
             base = "Switched Codex CLI auth to \(result.switchedAlias). Restart Codex App if it was already open."
         }
+        var message = base
         if result.appliedAgentPreferences {
-            return base + " Restored saved agent settings for this account."
+            message += " Restored saved agent settings for this account."
         }
-        return base
+        if let warning = result.agentPreferencesWarningReason {
+            message += " Agent settings could not be fully updated: \(warning)"
+        }
+        if let warning = result.projectArrangementWarningReason {
+            message += " Codex project list layout could not be preserved: \(warning)"
+        }
+        return message
+    }
+
+    private func addAccountMessage(
+        base: String,
+        result: AddAccountResult
+    ) -> String {
+        var message = base
+        if let warning = result.agentPreferencesWarningReason {
+            message += " Agent settings were not saved for this account: \(warning)"
+        }
+        return message
     }
 
     private func message(for outcome: CodexAppRestartOutcome) -> String {
@@ -496,14 +745,61 @@ public final class AccountStore: ObservableObject {
         logService?.error("operation failed: \(error.localizedDescription)")
     }
 
-    private func isStableAccountIdentifier(_ identifier: String) -> Bool {
-        !identifier.isEmpty && identifier != "api-key"
+    private func pruneQuotaStates() {
+        let accountIDs = Set(accounts.map(\.id))
+        quotaStates = quotaStates.filter { accountIDs.contains($0.key) }
     }
 
-    private func configureQuotaRefresh(previous: AppSettings, current: AppSettings) {
+    private func markLoadingQuotaStatesFailed(_ error: Error) {
+        let message = error.localizedDescription
+        let updatedAt = Date()
+        quotaStates = quotaStates.mapValues { state in
+            guard state.phase == .loading else { return state }
+            return .error(
+                accountID: state.accountID,
+                message: message,
+                updatedAt: updatedAt
+            )
+        }
+    }
+
+    private func quotaRefreshMessage(for result: RefreshAccountQuotasResult) -> String {
+        let states = Array(result.states.values)
+        let successfulCount = states.filter { $0.phase == .available }.count
+        let errorCount = states.filter { $0.phase == .error }.count
+
+        if successfulCount > 0 {
+            var message = "Refreshed quota for \(successfulCount) account\(successfulCount == 1 ? "" : "s")."
+            if errorCount > 0 {
+                message += " \(errorCount) account\(errorCount == 1 ? "" : "s") need attention."
+            }
+            return message
+        }
+
+        if errorCount > 0 {
+            return "Quota refresh finished; \(errorCount) account\(errorCount == 1 ? "" : "s") need attention."
+        }
+
+        let hasOAuthAccount = result.accounts.contains { $0.authMode == "chatgpt" }
+        if !hasOAuthAccount && !result.accounts.isEmpty {
+            return "No ChatGPT/Codex OAuth accounts expose quota."
+        }
+
+        return "No readable quota data was returned."
+    }
+
+    private func configureQuotaRefresh(current: AppSettings) {
+        if !current.allowNetworkQuotaAPIs {
+            quotaStates = [:]
+        }
+
+        let wasAutoRefreshEnabled = quotaRefreshConfiguration?.enabled == true
+        let previousAccountIDs = quotaRefreshConfiguration?.accountIDs ?? []
+        let currentAccountIDs = Set(accounts.map(\.id))
         let configuration = QuotaRefreshConfiguration(
-            enabled: current.allowNetworkQuotaAPIs,
-            intervalMinutes: current.quotaRefreshIntervalMinutes
+            enabled: current.allowNetworkQuotaAPIs && !currentAccountIDs.isEmpty,
+            intervalMinutes: current.quotaRefreshIntervalMinutes,
+            accountIDs: currentAccountIDs
         )
         guard quotaRefreshConfiguration != configuration else { return }
 
@@ -511,10 +807,7 @@ public final class AccountStore: ObservableObject {
         quotaRefreshTask?.cancel()
         quotaRefreshTask = nil
 
-        guard configuration.enabled else {
-            quotaStates = [:]
-            return
-        }
+        guard configuration.enabled else { return }
 
         quotaRefreshTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -525,8 +818,9 @@ public final class AccountStore: ObservableObject {
             }
         }
 
-        if !previous.allowNetworkQuotaAPIs {
-            refreshQuotasNow()
+        let addedAccountIDs = currentAccountIDs.subtracting(previousAccountIDs)
+        if !wasAutoRefreshEnabled || !addedAccountIDs.isEmpty {
+            refreshQuotas(allowDuringAccountWork: true)
         }
     }
 }
@@ -534,4 +828,5 @@ public final class AccountStore: ObservableObject {
 private struct QuotaRefreshConfiguration: Equatable {
     var enabled: Bool
     var intervalMinutes: Int
+    var accountIDs: Set<UUID>
 }

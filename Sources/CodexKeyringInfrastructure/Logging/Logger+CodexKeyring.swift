@@ -12,6 +12,7 @@ public enum LoggerCategory: String, Sendable {
     case app
     case settings
     case agentPrefs
+    case liveAuth
 }
 
 public enum CodexKeyringLog {
@@ -41,10 +42,12 @@ public enum CodexKeyringLog {
         if let existing = _sharedSink {
             return existing
         }
-        try? FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
+        do {
+            try PrivateFilePermissions.createDirectory(at: directory)
+        } catch {
+            Logger(subsystem: subsystem, category: LoggerCategory.app.rawValue)
+                .error("could not prepare log directory: \(error.localizedDescription, privacy: .private)")
+        }
         let sink = FileLogSink(
             directory: directory,
             fileName: fileName,

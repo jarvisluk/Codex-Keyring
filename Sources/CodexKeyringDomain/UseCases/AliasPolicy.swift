@@ -8,17 +8,24 @@ public struct AliasPolicy: Sendable {
     /// Trim whitespace; fall back to `fallback` when result is empty.
     public func clean(_ alias: String?, fallback: String) -> String {
         let cleaned = (alias ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? fallback : cleaned
+        let fallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? (fallback.isEmpty ? "account" : fallback) : cleaned
+    }
+
+    /// Trim whitespace while preserving an intentionally empty alias.
+    public func cleanAllowingEmpty(_ alias: String) -> String {
+        alias.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Suggest a default alias from auth metadata, preferring the email local part.
     public func suggested(for metadata: AuthMetadata) -> String {
-        if metadata.email.contains("@"),
-           let local = metadata.email.components(separatedBy: "@").first,
+        let email = metadata.email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if email.contains("@"),
+           let local = email.components(separatedBy: "@").first?.trimmingCharacters(in: .whitespacesAndNewlines),
            !local.isEmpty {
             return local
         }
-        return metadata.email.isEmpty ? "account" : metadata.email
+        return email.isEmpty ? "account" : email
     }
 
     /// Append `-2`, `-3`, ... when alias collides with an existing one (case-insensitive).

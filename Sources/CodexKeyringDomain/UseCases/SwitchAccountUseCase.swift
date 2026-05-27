@@ -4,11 +4,18 @@ public struct SwitchAccountResult: Sendable {
     public let state: AccountState
     public let switchedAlias: String
     public let restartOutcome: CodexAppRestartOutcome?
+    public let restartFailureReason: String?
     /// True when the live auth file was already this account's; no backup/replace happened.
     public let wasAlreadyActive: Bool
     /// True when per-account agent preferences were applied to the local Codex
     /// state files as part of this switch.
     public let appliedAgentPreferences: Bool
+    /// Non-fatal warning when the switch succeeded but a best-effort agent
+    /// preferences step could not be completed.
+    public let agentPreferencesWarningReason: String?
+    /// Non-fatal warning when the switch succeeded but the local Codex
+    /// project/sidebar arrangement could not be preserved around the restart.
+    public let projectArrangementWarningReason: String?
 }
 
 /// Validate the saved snapshot, back up the current Codex auth, replace it,
@@ -53,22 +60,28 @@ public struct SwitchAccountUseCase: Sendable {
         guard let account = manifest.accounts.first(where: { $0.id == accountID }) else {
             throw CodexKeyringError.snapshotMissing(accountID: accountID)
         }
-        guard repository.snapshotExists(named: account.snapshotFileName) else {
-            throw CodexKeyringError.snapshotMissing(accountID: account.id)
-        }
+        let snapshotURL = repository.snapshotURL(named: account.snapshotFileName)
+        let selectedSnapshotMetadata = try await readSelectedSnapshot(
+            from: snapshotURL,
+            accountID: account.id
+        )
 
-        let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
+        let currentAuth = try await readLiveAuthIfPresent()
 
         // Before we overwrite ~/.codex/auth.json, copy whatever Codex App has
         // most recently written there back into the matching saved snapshot.
         // Otherwise the refresh token we hand back to that account next time
         // will already have been rotated out by the server.
         if let currentAuth {
-            _ = try? await syncLiveAuth.sync(
-                liveMetadata: currentAuth,
-                liveURL: installer.liveAuthFileURL,
-                manifest: &manifest
-            )
+            do {
+                _ = try await syncLiveAuth.sync(
+                    liveMetadata: currentAuth,
+                    liveURL: installer.liveAuthFileURL,
+                    manifest: &manifest
+                )
+            } catch {
+                throw CodexKeyringError.currentAuthSyncFailed(reason: error.localizedDescription)
+            }
         }
 
         let wasAlreadyActive: Bool = {
@@ -78,6 +91,7 @@ public struct SwitchAccountUseCase: Sendable {
 
         let shouldRestartCodexApp = restartCodexApp && appController.isRunning
         let preserveEnabled = manifest.settings.preserveAgentPreferencesPerAccount && shouldRestartCodexApp
+        let warningBox = SwitchAccountWarningBox()
 
         // Capture the OUTGOING account's current Codex agent preferences so
         // any tweaks the user made in Codex App (model, effort, agent-mode,
@@ -91,33 +105,52 @@ public struct SwitchAccountUseCase: Sendable {
            let previousActiveID = manifest.activeAccountID,
            let previousIdx = manifest.accounts.firstIndex(where: { $0.id == previousActiveID })
         {
-            if let captured = try? await preferencesPort.captureCurrent(), !captured.isEmpty {
-                manifest.accounts[previousIdx].agentPreferences = captured
+            do {
+                let captured = try await preferencesPort.captureCurrent()
+                if !captured.isEmpty {
+                    manifest.accounts[previousIdx].agentPreferences = captured
+                }
+            } catch {
+                warningBox.recordAgentPreferencesWarning(error.localizedDescription)
             }
         }
 
-        let snapshotURL = repository.snapshotURL(named: account.snapshotFileName)
+        var restoreURL: URL?
+        var didInstallSnapshot = false
 
         if !wasAlreadyActive {
             do {
-                _ = try await installer.backupCurrent()
+                restoreURL = try await installer.backupCurrent()
+            } catch let error as CodexKeyringError {
+                if case .backupFailed = error {
+                    throw error
+                }
+                throw CodexKeyringError.backupFailed(reason: error.localizedDescription)
             } catch {
                 throw CodexKeyringError.backupFailed(reason: error.localizedDescription)
             }
             try await installer.install(snapshot: snapshotURL)
+            didInstallSnapshot = true
         }
 
         manifest.activeAccountID = account.id
-        try await repository.save(manifest)
+        do {
+            try await repository.save(manifest)
+        } catch {
+            if didInstallSnapshot {
+                try await restorePreviousLiveAuth(from: restoreURL, after: error)
+            }
+            throw error
+        }
 
         let targetPreferences = manifest.accounts
             .first(where: { $0.id == account.id })?
             .agentPreferences
 
-        let refreshedAuth = try? await authReader.read(from: installer.liveAuthFileURL)
+        let refreshedAuth = wasAlreadyActive ? currentAuth : selectedSnapshotMetadata
 
         var restartOutcome: CodexAppRestartOutcome?
-        var appliedAgentPreferences = false
+        var restartFailureReason: String?
 
         if restartCodexApp {
             let shouldApply = preserveEnabled
@@ -128,28 +161,43 @@ public struct SwitchAccountUseCase: Sendable {
             if shouldRestartCodexApp {
                 do {
                     restartOutcome = try await appController.restartIfRunning {
-                        let projectArrangement = (try? await preferencesPort.captureProjectArrangement())
-                            ?? CodexProjectArrangement()
+                        let projectArrangement: CodexProjectArrangement
+                        do {
+                            projectArrangement = try await preferencesPort.captureProjectArrangement()
+                        } catch {
+                            projectArrangement = CodexProjectArrangement()
+                            warningBox.recordProjectArrangementWarning(error.localizedDescription)
+                        }
                         if let prefs = prefsToApply {
-                            try await preferencesPort.apply(prefs)
+                            do {
+                                try await preferencesPort.apply(prefs)
+                                warningBox.recordAppliedAgentPreferences()
+                            } catch {
+                                warningBox.recordAgentPreferencesWarning(error.localizedDescription)
+                            }
                         }
                         if !projectArrangement.isEmpty {
-                            try await preferencesPort.restoreProjectArrangement(projectArrangement)
+                            do {
+                                try await preferencesPort.restoreProjectArrangement(projectArrangement)
+                            } catch {
+                                warningBox.recordProjectArrangementWarning(error.localizedDescription)
+                            }
                         }
                     }
                 } catch {
-                    throw CodexKeyringError.codexAppRelaunchFailed(reason: error.localizedDescription)
+                    restartFailureReason = Self.codexAppRestartFailureReason(from: error)
                 }
             } else {
                 restartOutcome = .wasNotRunning
             }
 
-            if let restartOutcome,
-               case .relaunched = restartOutcome,
-               prefsToApply != nil
-            {
-                appliedAgentPreferences = true
-            }
+        }
+
+        let appliedAgentPreferences: Bool
+        if let restartOutcome, case .relaunched = restartOutcome {
+            appliedAgentPreferences = warningBox.appliedAgentPreferences
+        } else {
+            appliedAgentPreferences = false
         }
 
         return SwitchAccountResult(
@@ -161,8 +209,89 @@ public struct SwitchAccountUseCase: Sendable {
             ),
             switchedAlias: account.displayName,
             restartOutcome: restartOutcome,
+            restartFailureReason: restartFailureReason,
             wasAlreadyActive: wasAlreadyActive,
-            appliedAgentPreferences: appliedAgentPreferences
+            appliedAgentPreferences: appliedAgentPreferences,
+            agentPreferencesWarningReason: warningBox.agentPreferencesWarningReason,
+            projectArrangementWarningReason: warningBox.projectArrangementWarningReason
         )
+    }
+
+    private static func codexAppRestartFailureReason(from error: Error) -> String {
+        if case CodexKeyringError.codexAppRelaunchFailed(let reason) = error {
+            return reason
+        }
+        return error.localizedDescription
+    }
+
+    private func readLiveAuthIfPresent() async throws -> AuthMetadata? {
+        do {
+            return try await authReader.read(from: installer.liveAuthFileURL)
+        } catch CodexKeyringError.authFileMissing {
+            return nil
+        }
+    }
+
+    private func readSelectedSnapshot(from url: URL, accountID: UUID) async throws -> AuthMetadata {
+        do {
+            return try await authReader.read(from: url)
+        } catch CodexKeyringError.authFileMissing {
+            throw CodexKeyringError.snapshotMissing(accountID: accountID)
+        }
+    }
+
+    private func restorePreviousLiveAuth(from restoreURL: URL?, after originalError: Error) async throws {
+        do {
+            try await installer.restoreLiveAuth(from: restoreURL)
+        } catch {
+            let reason = "Manifest save failed after installing the selected account: "
+                + "\(originalError.localizedDescription). Previous auth restore failed: "
+                + error.localizedDescription
+            throw CodexKeyringError.previousAuthRestoreFailed(
+                reason: reason,
+                recoveryPath: restoreURL?.path
+            )
+        }
+    }
+}
+
+private final class SwitchAccountWarningBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _agentPreferencesWarningReason: String?
+    private var _projectArrangementWarningReason: String?
+    private var _appliedAgentPreferences = false
+
+    var agentPreferencesWarningReason: String? {
+        lock.withLock { _agentPreferencesWarningReason }
+    }
+
+    var projectArrangementWarningReason: String? {
+        lock.withLock { _projectArrangementWarningReason }
+    }
+
+    var appliedAgentPreferences: Bool {
+        lock.withLock { _appliedAgentPreferences }
+    }
+
+    func recordAgentPreferencesWarning(_ reason: String) {
+        lock.withLock {
+            if _agentPreferencesWarningReason == nil {
+                _agentPreferencesWarningReason = reason
+            }
+        }
+    }
+
+    func recordProjectArrangementWarning(_ reason: String) {
+        lock.withLock {
+            if _projectArrangementWarningReason == nil {
+                _projectArrangementWarningReason = reason
+            }
+        }
+    }
+
+    func recordAppliedAgentPreferences() {
+        lock.withLock {
+            _appliedAgentPreferences = true
+        }
     }
 }

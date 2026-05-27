@@ -143,7 +143,7 @@ public struct CodexConfigTomlEditor: Sendable {
             }
             // If we're inserting before a section header, also leave one
             // blank line between the appended keys and the section header.
-            if insertionPoint < lines.count, !insertion.last!.isEmpty {
+            if insertionPoint < lines.count, insertion.last?.isEmpty == false {
                 insertion.append("")
             }
             lines.insert(contentsOf: insertion, at: insertionPoint)

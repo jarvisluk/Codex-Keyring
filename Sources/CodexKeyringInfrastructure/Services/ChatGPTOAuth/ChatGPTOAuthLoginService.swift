@@ -9,7 +9,7 @@ import CodexKeyringDomain
 /// `auth.json` to `~/.codex/auth.json`, ready for the rest of the app to
 /// snapshot/restore as needed.
 public struct ChatGPTOAuthLoginService: CodexLoginServicing {
-    public static let openAIIssuer = URL(string: "https://auth.openai.com")!
+    public static let openAIIssuer = BundledURL.https(host: "auth.openai.com")
     /// OpenAI's public client identifier for the Codex CLI. Hard-coded just
     /// like the upstream Rust implementation.
     public static let clientID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -19,6 +19,7 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
     private let authFileURL: URL
     private let codexDirectory: URL
     private let urlSession: URLSession
+    private let ioQueue: DispatchQueue
     private let log = CodexKeyringLog.makeAppLogger(.oauth)
 
     public init(
@@ -26,13 +27,15 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
         clientID: String = ChatGPTOAuthLoginService.clientID,
         authFileURL: URL = AppPaths.codexAuthFile,
         codexDirectory: URL = AppPaths.codexDirectory,
-        urlSession: URLSession = .shared
+        urlSession: URLSession = .shared,
+        ioQueue: DispatchQueue = DispatchQueue(label: "com.junrong.CodexKeyring.ChatGPTOAuthLogin")
     ) {
         self.issuer = issuer
         self.clientID = clientID
         self.authFileURL = authFileURL
         self.codexDirectory = codexDirectory
         self.urlSession = urlSession
+        self.ioQueue = ioQueue
     }
 
     public func loginWithChatGPT(
@@ -50,14 +53,22 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
         }
 
         let redirectURI = await server.redirectURI
-        let authorizeURL = buildAuthorizeURL(redirectURI: redirectURI, pkce: pkce, state: state)
+        let authorizeURL: URL
+        do {
+            authorizeURL = try buildAuthorizeURL(redirectURI: redirectURI, pkce: pkce, state: state)
+        } catch {
+            await server.shutdown()
+            log.error("failed to build authorization URL: \(error.localizedDescription)")
+            throw error
+        }
 
         do {
             log.info("opening ChatGPT auth URL on port resolved from server")
             try await openAuthURL(authorizeURL)
         } catch {
             await server.shutdown()
-            throw CodexKeyringError.codexLoginFailed(reason: "Could not open browser: \(error.localizedDescription)")
+            log.error("failed to open browser for ChatGPT auth")
+            throw CodexKeyringError.codexLoginFailed(reason: Self.browserOpenFailureReason)
         }
 
         let callback: OAuthCallbackResult
@@ -77,13 +88,16 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
                 redirectURI: redirectURI,
                 pkce: pkce
             )
+        } catch let error as CodexKeyringError {
+            log.error("token exchange failed: \(error.localizedDescription)")
+            throw error
         } catch {
             log.error("token exchange failed: \(error.localizedDescription)")
             throw CodexKeyringError.codexLoginFailed(reason: "Token exchange failed: \(error.localizedDescription)")
         }
 
         do {
-            try persistAuth(tokens: tokens)
+            try await persistAuth(tokens: tokens)
         } catch let error as CodexKeyringError {
             throw error
         } catch {
@@ -91,12 +105,18 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
         }
     }
 
-    private func buildAuthorizeURL(redirectURI: String, pkce: PKCECodes, state: String) -> URL {
+    private func buildAuthorizeURL(redirectURI: String, pkce: PKCECodes, state: String) throws -> URL {
+        guard let scheme = issuer.scheme, !scheme.isEmpty,
+              let host = issuer.host, !host.isEmpty else {
+            throw CodexKeyringError.codexLoginFailed(reason: "Authorization issuer must include a scheme and host.")
+        }
+
+        let basePath = issuer.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         var components = URLComponents()
-        components.scheme = issuer.scheme
-        components.host = issuer.host
+        components.scheme = scheme
+        components.host = host
         components.port = issuer.port
-        components.path = (issuer.path.isEmpty ? "" : issuer.path) + "/oauth/authorize"
+        components.path = basePath.isEmpty ? "/oauth/authorize" : "/\(basePath)/oauth/authorize"
         components.queryItems = [
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "client_id", value: clientID),
@@ -110,7 +130,7 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
             URLQueryItem(name: "originator", value: "codex_keyring")
         ]
         guard let url = components.url else {
-            preconditionFailure("Could not build OpenAI authorize URL from \(components)")
+            throw CodexKeyringError.codexLoginFailed(reason: "Could not build authorization URL.")
         }
         return url
     }
@@ -138,25 +158,45 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
             throw CodexKeyringError.codexLoginUnexpectedResponse(reason: "Non-HTTP response from token endpoint.")
         }
         guard (200..<300).contains(http.statusCode) else {
-            let bodyText = String(data: data, encoding: .utf8) ?? ""
             throw CodexKeyringError.codexLoginFailed(
-                reason: "OAuth token endpoint returned HTTP \(http.statusCode): \(bodyText)"
+                reason: OAuthErrorSanitizer.tokenEndpointFailureReason(
+                    statusCode: http.statusCode,
+                    data: data
+                )
             )
         }
 
         do {
             let decoded = try JSONDecoder().decode(TokenResponse.self, from: data)
+            guard Self.nonEmpty(decoded.id_token) != nil,
+                  Self.nonEmpty(decoded.access_token) != nil,
+                  Self.nonEmpty(decoded.refresh_token) != nil else {
+                throw CodexKeyringError.codexLoginUnexpectedResponse(
+                    reason: "Token response was missing required token fields."
+                )
+            }
             return ExchangedTokens(
                 idToken: decoded.id_token,
                 accessToken: decoded.access_token,
                 refreshToken: decoded.refresh_token
             )
+        } catch let error as CodexKeyringError {
+            throw error
         } catch {
             throw CodexKeyringError.codexLoginUnexpectedResponse(
                 reason: "Could not decode token response: \(error.localizedDescription)"
             )
         }
     }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    private static let browserOpenFailureReason = "Could not open browser for Codex login."
 
     private static func formURLEncode(_ items: [URLQueryItem]) -> String {
         var allowed = CharacterSet.urlQueryAllowed
@@ -168,7 +208,13 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
         }.joined(separator: "&")
     }
 
-    private func persistAuth(tokens: ExchangedTokens) throws {
+    private func persistAuth(tokens: ExchangedTokens) async throws {
+        try await performIO {
+            try self.persistAuthOnCurrentQueue(tokens: tokens)
+        }
+    }
+
+    private func persistAuthOnCurrentQueue(tokens: ExchangedTokens) throws {
         let accountID = JWTPayload.chatgptAccountID(from: tokens.idToken)
 
         let payload = AuthJSONPayload(
@@ -193,8 +239,10 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
         }
 
         let manager = FileManager.default
+        try ensureAuthDestinationIsFileIfPresent(fileManager: manager)
+
         do {
-            try manager.createDirectory(at: codexDirectory, withIntermediateDirectories: true)
+            try PrivateFilePermissions.createDirectory(at: codexDirectory, fileManager: manager)
         } catch {
             throw CodexKeyringError.fileSystemFailure(reason: "Could not prepare \(codexDirectory.path): \(error.localizedDescription)")
         }
@@ -202,7 +250,7 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
         let temp = codexDirectory.appendingPathComponent(".auth.json.codex-keyring-\(UUID().uuidString)")
         do {
             try data.write(to: temp, options: [.atomic])
-            try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temp.path)
+            try PrivateFilePermissions.setFile(at: temp, fileManager: manager)
         } catch {
             try? manager.removeItem(at: temp)
             throw CodexKeyringError.fileSystemFailure(reason: "Could not stage auth.json: \(error.localizedDescription)")
@@ -214,9 +262,36 @@ public struct ChatGPTOAuthLoginService: CodexLoginServicing {
             } else {
                 try manager.moveItem(at: temp, to: authFileURL)
             }
+            try PrivateFilePermissions.setFile(at: authFileURL, fileManager: manager)
         } catch {
             try? manager.removeItem(at: temp)
             throw CodexKeyringError.fileSystemFailure(reason: "Could not install auth.json: \(error.localizedDescription)")
+        }
+    }
+
+    private func ensureAuthDestinationIsFileIfPresent(fileManager manager: FileManager) throws {
+        var isDirectory = ObjCBool(false)
+        guard manager.fileExists(atPath: authFileURL.path, isDirectory: &isDirectory) else {
+            return
+        }
+        guard !isDirectory.boolValue else {
+            throw CodexKeyringError.fileSystemFailure(
+                reason: "Auth destination is not a file: \(authFileURL.path)"
+            )
+        }
+    }
+
+    private func performIO<T: Sendable>(
+        _ work: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            ioQueue.async {
+                do {
+                    continuation.resume(returning: try work())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
 }
@@ -264,7 +339,7 @@ private struct AuthJSONPayload: Encodable {
 
 private enum JWTPayload {
     static func chatgptAccountID(from jwt: String) -> String? {
-        let parts = jwt.split(separator: ".")
+        let parts = jwt.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".")
         guard parts.count >= 2 else { return nil }
         var payload = String(parts[1])
             .replacingOccurrences(of: "-", with: "+")
@@ -276,15 +351,23 @@ private enum JWTPayload {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        if let accountID = object["chatgpt_account_id"] as? String, !accountID.isEmpty {
+        if let accountID = nonEmpty(object["chatgpt_account_id"] as? String) {
             return accountID
         }
         if let claim = object["https://api.openai.com/auth"] as? [String: Any],
-           let accountID = claim["chatgpt_account_id"] as? String,
-           !accountID.isEmpty {
+           let accountID = nonEmpty(claim["chatgpt_account_id"] as? String) {
             return accountID
         }
         return nil
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else {
+            return nil
+        }
+        return trimmed
     }
 }
 

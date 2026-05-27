@@ -21,8 +21,10 @@ public enum AppPaths {
     }
 
     public static var applicationSupportDirectory: URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(appName, isDirectory: true)
+        applicationSupportDirectory(
+            candidates: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask),
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        )
     }
 
     public static var accountsDirectory: URL {
@@ -52,11 +54,34 @@ public enum AppPaths {
     }
 
     public static func ensureDirectories() throws {
-        let manager = FileManager.default
-        try manager.createDirectory(at: applicationSupportDirectory, withIntermediateDirectories: true)
-        try manager.createDirectory(at: accountsDirectory, withIntermediateDirectories: true)
-        try manager.createDirectory(at: loginStagingDirectory, withIntermediateDirectories: true)
-        try manager.createDirectory(at: backupsDirectory, withIntermediateDirectories: true)
-        try manager.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
+        try PrivateFilePermissions.createDirectory(at: applicationSupportDirectory)
+        try PrivateFilePermissions.createDirectory(at: accountsDirectory)
+        try PrivateFilePermissions.createDirectory(at: loginStagingDirectory)
+        try PrivateFilePermissions.createDirectory(at: backupsDirectory)
+        try PrivateFilePermissions.createDirectory(at: logsDirectory)
+    }
+
+    static func applicationSupportDirectory(
+        candidates: [URL],
+        homeDirectory: URL
+    ) -> URL {
+        applicationSupportBaseDirectory(
+            candidates: candidates,
+            homeDirectory: homeDirectory
+        )
+        .appendingPathComponent(appName, isDirectory: true)
+    }
+
+    private static func applicationSupportBaseDirectory(
+        candidates: [URL],
+        homeDirectory: URL
+    ) -> URL {
+        if let firstCandidate = candidates.first {
+            return firstCandidate
+        }
+
+        return homeDirectory
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
     }
 }

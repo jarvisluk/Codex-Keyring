@@ -48,15 +48,6 @@ public struct RefreshAccountQuotasUseCase: Sendable {
                 continue
             }
 
-            guard repository.snapshotExists(named: account.snapshotFileName) else {
-                states[account.id] = .error(
-                    accountID: account.id,
-                    message: "The saved auth snapshot is missing.",
-                    updatedAt: now
-                )
-                continue
-            }
-
             let liveAuthFileURL = manifest.activeAccountID == account.id
                 ? installer.liveAuthFileURL
                 : nil
@@ -72,15 +63,20 @@ public struct RefreshAccountQuotasUseCase: Sendable {
                 if let metadata = result.updatedMetadata,
                    let index = manifest.accounts.firstIndex(where: { $0.id == account.id })
                 {
-                    manifest.accounts[index].email = metadata.email
-                    manifest.accounts[index].plan = metadata.plan
-                    manifest.accounts[index].authMode = metadata.authMode
-                    manifest.accounts[index].accountIdentifier = metadata.accountIdentifier
-                    manifest.accounts[index].fingerprint = metadata.fingerprint
-                    manifest.accounts[index].tokenExpiresAt = metadata.tokenExpiresAt
-                    manifest.accounts[index].updatedAt = clock.now()
-                    didUpdateManifest = true
+                    let original = manifest.accounts[index]
+                    var updated = AuthMetadataMergePolicy().merged(metadata, into: original)
+                    if updated != original {
+                        updated.updatedAt = clock.now()
+                        manifest.accounts[index] = updated
+                        didUpdateManifest = true
+                    }
                 }
+            } catch CodexKeyringError.authFileMissing {
+                states[account.id] = .error(
+                    accountID: account.id,
+                    message: "The saved auth snapshot is missing.",
+                    updatedAt: clock.now()
+                )
             } catch {
                 states[account.id] = .error(
                     accountID: account.id,

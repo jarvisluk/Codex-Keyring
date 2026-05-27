@@ -50,15 +50,34 @@ public struct CodexAccount: Identifiable, Codable, Hashable, Sendable {
     }
 
     public var displayName: String {
-        alias.isEmpty ? email : alias
+        let cleanedAlias = alias.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleanedAlias.isEmpty ? displayEmail : cleanedAlias
     }
 
     public var displayEmail: String {
-        email.isEmpty ? "Unknown email" : email
+        let cleanedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleanedEmail.isEmpty ? "Unknown email" : cleanedEmail
+    }
+
+    public static func displayOrderPrecedes(_ lhs: CodexAccount, _ rhs: CodexAccount) -> Bool {
+        let nameOrder = lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
+        if nameOrder != .orderedSame {
+            return nameOrder == .orderedAscending
+        }
+
+        let emailOrder = lhs.displayEmail.localizedCaseInsensitiveCompare(rhs.displayEmail)
+        if emailOrder != .orderedSame {
+            return emailOrder == .orderedAscending
+        }
+
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 }
 
 public struct AuthMetadata: Hashable, Sendable {
+    public static let apiKeyAccountIdentifier = "api-key"
+    public static let unknownChatGPTAccountIdentifier = "unknown-chatgpt-account"
+
     public var email: String
     public var plan: String
     public var authMode: String

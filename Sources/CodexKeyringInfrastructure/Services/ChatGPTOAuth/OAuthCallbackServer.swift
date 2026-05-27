@@ -28,6 +28,7 @@ actor OAuthCallbackServer {
         case stateMismatch
         case oauthError(code: String, description: String?)
         case missingCode
+        case duplicateParameter(String)
         case cancelled
         case timedOut
 
@@ -38,12 +39,14 @@ actor OAuthCallbackServer {
             case .stateMismatch:
                 return "The OAuth callback state did not match. The login was aborted to prevent CSRF."
             case .oauthError(let code, let description):
-                if let description, !description.isEmpty {
-                    return "OAuth provider returned error \(code): \(description)"
-                }
-                return "OAuth provider returned error \(code)."
+                return OAuthErrorSanitizer.providerErrorDescription(
+                    code: code,
+                    description: description
+                )
             case .missingCode:
                 return "OAuth callback did not include an authorization code."
+            case .duplicateParameter(let name):
+                return "OAuth callback included duplicate \(name) parameters."
             case .cancelled:
                 return "The OAuth login was cancelled before it completed."
             case .timedOut:
@@ -53,7 +56,7 @@ actor OAuthCallbackServer {
     }
 
     private let expectedState: String
-    private let listenerFD: Int32
+    private let listener: OAuthListenerState
     private let port: UInt16
     private let acceptQueue = DispatchQueue(label: "com.junrong.CodexKeyring.oauth.accept", qos: .userInitiated)
     private let connectionQueue = DispatchQueue(
@@ -65,11 +68,11 @@ actor OAuthCallbackServer {
 
     private var continuation: CheckedContinuation<OAuthCallbackResult, Error>?
     private var didFinish = false
-    private var acceptingStopped = false
+    private var finishedResult: Result<OAuthCallbackResult, Error>?
 
-    private init(expectedState: String, listenerFD: Int32, port: UInt16) {
+    private init(expectedState: String, listener: OAuthListenerState, port: UInt16) {
         self.expectedState = expectedState
-        self.listenerFD = listenerFD
+        self.listener = listener
         self.port = port
     }
 
@@ -79,15 +82,17 @@ actor OAuthCallbackServer {
 
     /// Binds to `defaultPort` first, falling back to `fallbackPort` and then to
     /// an arbitrary ephemeral port. The chosen port is exposed via `port`.
-    static func start(expectedState: String) async throws -> OAuthCallbackServer {
-        let candidates: [UInt16] = [defaultPort, fallbackPort, 0]
+    static func start(
+        expectedState: String,
+        candidatePorts candidates: [UInt16] = [defaultPort, fallbackPort, 0]
+    ) async throws -> OAuthCallbackServer {
         var lastError: String = "no port available"
         for candidate in candidates {
             do {
                 let (fd, port) = try bind(port: candidate)
                 let server = OAuthCallbackServer(
                     expectedState: expectedState,
-                    listenerFD: fd,
+                    listener: OAuthListenerState(fd: fd),
                     port: port
                 )
                 await server.startAccepting()
@@ -112,6 +117,12 @@ actor OAuthCallbackServer {
         var reuse: Int32 = 1
         _ = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout.size(ofValue: reuse)))
         _ = fcntl(fd, F_SETFD, FD_CLOEXEC)
+        let flags = fcntl(fd, F_GETFL, 0)
+        guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 else {
+            let reason = posixDescription(errno)
+            close(fd)
+            throw ServerError.bindFailed("fcntl(O_NONBLOCK) failed: \(reason)")
+        }
 
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -150,6 +161,19 @@ actor OAuthCallbackServer {
     /// Awaits the next valid `/auth/callback` request, with a timeout (defaults
     /// to 120 seconds to match the upstream Codex behaviour).
     func waitForCode(timeout: Duration = .seconds(120)) async throws -> OAuthCallbackResult {
+        do {
+            return try await withTaskCancellationHandler {
+                try await waitForCodeUntilFinished(timeout: timeout)
+            } onCancel: {
+                Task { await self.finish(with: .failure(ServerError.cancelled)) }
+            }
+        } catch is CancellationError {
+            finish(with: .failure(ServerError.cancelled))
+            throw ServerError.cancelled
+        }
+    }
+
+    private func waitForCodeUntilFinished(timeout: Duration) async throws -> OAuthCallbackResult {
         try await withThrowingTaskGroup(of: OAuthCallbackResult.self) { group in
             group.addTask {
                 try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<OAuthCallbackResult, Error>) in
@@ -158,7 +182,9 @@ actor OAuthCallbackServer {
             }
             group.addTask {
                 try await Task.sleep(for: timeout)
-                throw ServerError.timedOut
+                let timeoutError = ServerError.timedOut
+                await self.finish(with: .failure(timeoutError))
+                throw timeoutError
             }
 
             defer { group.cancelAll() }
@@ -170,7 +196,16 @@ actor OAuthCallbackServer {
     }
 
     private func installContinuation(_ continuation: CheckedContinuation<OAuthCallbackResult, Error>) {
-        if didFinish {
+        if let finishedResult {
+            switch finishedResult {
+            case .success(let value):
+                continuation.resume(returning: value)
+            case .failure(let error):
+                continuation.resume(throwing: error)
+            }
+            return
+        }
+        guard !didFinish else {
             continuation.resume(throwing: ServerError.cancelled)
             return
         }
@@ -184,14 +219,11 @@ actor OAuthCallbackServer {
     private func finish(with result: Result<OAuthCallbackResult, Error>) {
         guard !didFinish else { return }
         didFinish = true
-        acceptingStopped = true
+        finishedResult = result
         let pending = continuation
         continuation = nil
 
-        if listenerFD >= 0 {
-            Darwin.shutdown(listenerFD, SHUT_RDWR)
-            close(listenerFD)
-        }
+        listener.stop()
 
         switch result {
         case .success(let value):
@@ -202,34 +234,60 @@ actor OAuthCallbackServer {
     }
 
     private func startAccepting() {
-        let fd = listenerFD
+        let listener = listener
         acceptQueue.async { [weak self] in
-            self?.acceptLoop(fd: fd)
+            self?.acceptLoop(listener: listener)
         }
     }
 
-    private nonisolated func acceptLoop(fd: Int32) {
+    private nonisolated func acceptLoop(listener: OAuthListenerState) {
+        let fd = listener.fd
         while true {
-            var clientAddr = sockaddr_in()
-            var len = socklen_t(MemoryLayout<sockaddr_in>.size)
-            let clientFD = withUnsafeMutablePointer(to: &clientAddr) { ptr -> Int32 in
-                ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
-                    Darwin.accept(fd, sa, &len)
-                }
-            }
-            if clientFD < 0 {
-                let captured = errno
-                if captured == EINTR { continue }
-                // Listener was closed (EBADF) or interrupted; exit the loop.
+            if listener.isStopped { return }
+
+            var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let pollResult = Darwin.poll(&descriptor, 1, 100)
+            if pollResult < 0 {
+                if errno == EINTR { continue }
                 return
             }
-            _ = fcntl(clientFD, F_SETFD, FD_CLOEXEC)
-            connectionQueue.async { [weak self] in
-                guard let self else {
-                    close(clientFD)
+            if pollResult == 0 { continue }
+            if listener.isStopped { return }
+            if descriptor.revents & Int16(POLLNVAL | POLLERR | POLLHUP) != 0 {
+                return
+            }
+            guard descriptor.revents & Int16(POLLIN) != 0 else {
+                continue
+            }
+
+            while true {
+                var clientAddr = sockaddr_in()
+                var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+                let clientFD = withUnsafeMutablePointer(to: &clientAddr) { ptr -> Int32 in
+                    ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                        Darwin.accept(fd, sa, &len)
+                    }
+                }
+                if clientFD < 0 {
+                    let captured = errno
+                    if captured == EINTR { continue }
+                    if captured == EAGAIN || captured == EWOULDBLOCK {
+                        break
+                    }
                     return
                 }
-                self.handleConnection(clientFD: clientFD)
+                _ = fcntl(clientFD, F_SETFD, FD_CLOEXEC)
+                let clientFlags = fcntl(clientFD, F_GETFL, 0)
+                if clientFlags >= 0 {
+                    _ = fcntl(clientFD, F_SETFL, clientFlags & ~O_NONBLOCK)
+                }
+                connectionQueue.async { [weak self] in
+                    guard let self else {
+                        close(clientFD)
+                        return
+                    }
+                    self.handleConnection(clientFD: clientFD)
+                }
             }
         }
     }
@@ -298,13 +356,32 @@ actor OAuthCallbackServer {
     }
 
     private func handleCallback(queryItems: [URLQueryItem], clientFD: Int32) {
-        let params = Dictionary(uniqueKeysWithValues: queryItems.map { ($0.name, $0.value ?? "") })
+        let params: [String: String]
+        do {
+            params = try Self.callbackParameters(from: queryItems)
+        } catch {
+            Self.renderErrorPage(clientFD: clientFD, message: error.localizedDescription)
+            close(clientFD)
+            log.error("oauth callback rejected: \(error.localizedDescription)")
+            finish(with: .failure(error))
+            return
+        }
 
         if let errorCode = params["error"], !errorCode.isEmpty {
             let description = params["error_description"]
-            Self.renderErrorPage(clientFD: clientFD, message: description ?? errorCode)
+            Self.renderErrorPage(
+                clientFD: clientFD,
+                message: OAuthErrorSanitizer.browserErrorMessage(
+                    code: errorCode,
+                    description: description
+                )
+            )
             close(clientFD)
-            log.error("oauth callback returned error: \(errorCode)")
+            let sanitizedError = OAuthErrorSanitizer.providerErrorDescription(
+                code: errorCode,
+                description: description
+            )
+            log.error("oauth callback failed: \(sanitizedError)")
             finish(with: .failure(ServerError.oauthError(code: errorCode, description: description)))
             return
         }
@@ -330,6 +407,22 @@ actor OAuthCallbackServer {
         close(clientFD)
         log.info("oauth callback succeeded")
         finish(with: .success(OAuthCallbackResult(code: code, state: stateValue)))
+    }
+
+    private static func callbackParameters(from queryItems: [URLQueryItem]) throws -> [String: String] {
+        let singleValueNames: Set<String> = ["code", "state", "error", "error_description"]
+        var params: [String: String] = [:]
+        var seenSingleValueNames = Set<String>()
+
+        for item in queryItems {
+            guard singleValueNames.contains(item.name) else { continue }
+            guard seenSingleValueNames.insert(item.name).inserted else {
+                throw ServerError.duplicateParameter(item.name)
+            }
+            params[item.name] = item.value ?? ""
+        }
+
+        return params
     }
 
     private static func renderSuccessPage(clientFD: Int32) {
@@ -390,6 +483,36 @@ actor OAuthCallbackServer {
             }
             return sent
         }
+    }
+}
+
+private final class OAuthListenerState: @unchecked Sendable {
+    let fd: Int32
+
+    private let lock = NSLock()
+    private var stopped = false
+
+    init(fd: Int32) {
+        self.fd = fd
+    }
+
+    var isStopped: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopped
+    }
+
+    func stop() {
+        lock.lock()
+        guard !stopped else {
+            lock.unlock()
+            return
+        }
+        stopped = true
+        lock.unlock()
+
+        _ = Darwin.shutdown(fd, SHUT_RDWR)
+        _ = Darwin.close(fd)
     }
 }
 

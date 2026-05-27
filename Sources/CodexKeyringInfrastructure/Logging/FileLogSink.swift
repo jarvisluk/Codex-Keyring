@@ -96,42 +96,83 @@ public final class FileLogSink: @unchecked Sendable {
     /// Combine every retained log file (oldest first) into a single text
     /// document at `destination`. An optional `header` is prepended.
     public func exportCombined(to destination: URL, header: String? = nil) throws {
-        var ordered: [URL] = []
+        var orderedFiles: [(url: URL, data: Data)] = []
         var captured: Error?
         queue.sync {
             do {
                 try self.flushOnQueue()
                 // Oldest first, current last so the export reads chronologically.
-                ordered = self.collectFileURLs().reversed()
+                // Read while holding the serial log queue so rotation cannot move
+                // files between path collection and export snapshot creation.
+                orderedFiles = try self.collectFileURLs().reversed().map { url in
+                    do {
+                        return (url, try Data(contentsOf: url))
+                    } catch {
+                        throw FileLogSinkError.exportFailed(
+                            reason: "Could not read \(url.path): \(error.localizedDescription)"
+                        )
+                    }
+                }
             } catch {
                 captured = error
             }
         }
         if let captured { throw captured }
 
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
+        let destinationPath = destination.standardizedFileURL.path
+        let protectedLogPaths = Set(protectedLogFileURLs().map { $0.standardizedFileURL.path })
+        guard !protectedLogPaths.contains(destinationPath) else {
+            throw FileLogSinkError.exportFailed(
+                reason: "Choose a destination outside Codex Keyring's active log files."
+            )
         }
+
+        var isDirectory = ObjCBool(false)
+        if fileManager.fileExists(atPath: destination.path, isDirectory: &isDirectory) {
+            guard !isDirectory.boolValue else {
+                throw FileLogSinkError.exportFailed(reason: "Choose a file destination, not a directory.")
+            }
+        }
+        let temporaryDestination = destination
+            .deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.lastPathComponent).tmp-\(UUID().uuidString)")
         try fileManager.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        guard fileManager.createFile(atPath: destination.path, contents: nil) else {
-            throw FileLogSinkError.exportFailed(reason: "Could not create \(destination.path).")
-        }
-        let outHandle = try FileHandle(forWritingTo: destination)
-        defer { try? outHandle.close() }
-
-        if let header, !header.isEmpty {
-            try outHandle.write(contentsOf: Data(header.utf8))
-        }
-
-        for url in ordered {
-            guard let data = try? Data(contentsOf: url), !data.isEmpty else { continue }
-            try outHandle.write(contentsOf: data)
-            if data.last != 0x0A {
-                try outHandle.write(contentsOf: Data([0x0A]))
+        do {
+            guard fileManager.createFile(atPath: temporaryDestination.path, contents: nil) else {
+                throw FileLogSinkError.exportFailed(reason: "Could not create \(destination.path).")
             }
+            try PrivateFilePermissions.setFile(at: temporaryDestination, fileManager: fileManager)
+            let outHandle = try FileHandle(forWritingTo: temporaryDestination)
+            do {
+                if let header, !header.isEmpty {
+                    try outHandle.write(contentsOf: Data(header.utf8))
+                }
+
+                for (_, data) in orderedFiles {
+                    guard !data.isEmpty else { continue }
+                    try outHandle.write(contentsOf: data)
+                    if data.last != 0x0A {
+                        try outHandle.write(contentsOf: Data([0x0A]))
+                    }
+                }
+                try outHandle.close()
+            } catch {
+                try? outHandle.close()
+                throw error
+            }
+
+            if fileManager.fileExists(atPath: destination.path) {
+                _ = try fileManager.replaceItemAt(destination, withItemAt: temporaryDestination)
+            } else {
+                try fileManager.moveItem(at: temporaryDestination, to: destination)
+            }
+            try PrivateFilePermissions.setFile(at: destination, fileManager: fileManager)
+        } catch {
+            try? fileManager.removeItem(at: temporaryDestination)
+            throw error
         }
     }
 
@@ -156,6 +197,7 @@ public final class FileLogSink: @unchecked Sendable {
         let safeMessage = record.message
             .replacingOccurrences(of: "\r\n", with: " ")
             .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
         return "\(ts) [\(level)] \(category) \(safeMessage)\n"
     }
 
@@ -177,10 +219,12 @@ public final class FileLogSink: @unchecked Sendable {
     private func ensureHandleOnQueue() throws {
         if handle != nil { return }
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try PrivateFilePermissions.setDirectory(at: directory, fileManager: fileManager)
         let url = currentFileURL
         if !fileManager.fileExists(atPath: url.path) {
             fileManager.createFile(atPath: url.path, contents: nil)
         }
+        try PrivateFilePermissions.setFile(at: url, fileManager: fileManager)
         let handle = try FileHandle(forWritingTo: url)
         try handle.seekToEnd()
         currentSize = Int(try handle.offset())
@@ -210,6 +254,7 @@ public final class FileLogSink: @unchecked Sendable {
                         try fileManager.removeItem(at: to)
                     }
                     try fileManager.moveItem(at: from, to: to)
+                    try PrivateFilePermissions.setFile(at: to, fileManager: fileManager)
                 }
             }
         }
@@ -222,6 +267,7 @@ public final class FileLogSink: @unchecked Sendable {
                     try fileManager.removeItem(at: to)
                 }
                 try fileManager.moveItem(at: current, to: to)
+                try PrivateFilePermissions.setFile(at: to, fileManager: fileManager)
             } else {
                 try fileManager.removeItem(at: current)
             }
@@ -241,6 +287,12 @@ public final class FileLogSink: @unchecked Sendable {
             }
         }
         return urls
+    }
+
+    private func protectedLogFileURLs() -> [URL] {
+        [currentFileURL] + (1..<maxFiles).map { index in
+            directory.appendingPathComponent("\(fileName).\(index)")
+        }
     }
 }
 

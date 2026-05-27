@@ -58,9 +58,14 @@ public struct CodexGlobalStateEditor: Sendable {
         }
 
         var current: NSMutableDictionary = root
+        var currentPath: [String] = []
         for parent in path.dropLast() {
-            if let existing = current[parent] as? NSMutableDictionary {
-                current = existing
+            currentPath.append(parent)
+            if let existing = current[parent] {
+                guard let existingDictionary = existing as? NSMutableDictionary else {
+                    throw EditorError.parentIsNotJSONObject(path: currentPath)
+                }
+                current = existingDictionary
             } else {
                 let new = NSMutableDictionary()
                 current[parent] = new
@@ -68,7 +73,7 @@ public struct CodexGlobalStateEditor: Sendable {
             }
         }
 
-        let leaf = path.last!
+        guard let leaf = path.last else { return data }
         if let value {
             current[leaf] = value
         } else {
@@ -98,7 +103,18 @@ public struct CodexGlobalStateEditor: Sendable {
         return cursor
     }
 
-    public enum EditorError: Error, Equatable {
+    public enum EditorError: Error, Equatable, LocalizedError {
         case notAJSONObject
+        case parentIsNotJSONObject(path: [String])
+
+        public var errorDescription: String? {
+            switch self {
+            case .notAJSONObject:
+                return "Expected global-state JSON root to be an object."
+            case .parentIsNotJSONObject(let path):
+                let location = path.joined(separator: ".")
+                return "Expected JSON object at \(location) before writing global-state value."
+            }
+        }
     }
 }

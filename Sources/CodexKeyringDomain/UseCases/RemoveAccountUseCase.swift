@@ -23,34 +23,39 @@ public struct RemoveAccountUseCase: Sendable {
     public func callAsFunction(accountID: UUID) async throws -> RemoveAccountResult {
         var manifest = try await repository.load()
         guard let index = manifest.accounts.firstIndex(where: { $0.id == accountID }) else {
+            let currentAuth = try await readLiveAuthIfPresent()
             return RemoveAccountResult(
                 state: AccountState(
                     accounts: manifest.accounts,
                     activeAccountID: manifest.activeAccountID,
                     settings: manifest.settings,
-                    currentAuthMetadata: try? await authReader.read(from: installer.liveAuthFileURL)
+                    currentAuthMetadata: currentAuth
                 ),
                 removedAlias: ""
             )
         }
         let removed = manifest.accounts[index]
-        if repository.snapshotExists(named: removed.snapshotFileName) {
-            try await repository.deleteSnapshot(named: removed.snapshotFileName)
-        }
+        let originalManifest = manifest
         manifest.accounts.remove(at: index)
         if manifest.activeAccountID == removed.id {
             manifest.activeAccountID = nil
         }
-        try await repository.save(manifest)
 
-        let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
+        let currentAuth = try await readLiveAuthIfPresent()
         var activeID = manifest.activeAccountID
         if activeID == nil,
-           let fingerprint = currentAuth?.fingerprint,
-           let match = manifest.accounts.first(where: { $0.fingerprint == fingerprint }) {
+           let currentAuth,
+           let match = AccountIdentityMatcher.firstMatchingAccount(for: currentAuth, in: manifest.accounts) {
             activeID = match.id
             manifest.activeAccountID = activeID
-            try await repository.save(manifest)
+        }
+
+        try await repository.save(manifest)
+        do {
+            try await repository.deleteSnapshot(named: removed.snapshotFileName)
+        } catch {
+            try await rollbackManifest(to: originalManifest, after: error)
+            throw error
         }
 
         return RemoveAccountResult(
@@ -62,5 +67,24 @@ public struct RemoveAccountUseCase: Sendable {
             ),
             removedAlias: removed.displayName
         )
+    }
+
+    private func readLiveAuthIfPresent() async throws -> AuthMetadata? {
+        do {
+            return try await authReader.read(from: installer.liveAuthFileURL)
+        } catch CodexKeyringError.authFileMissing {
+            return nil
+        }
+    }
+
+    private func rollbackManifest(to originalManifest: AccountManifest, after originalError: Error) async throws {
+        do {
+            try await repository.save(originalManifest)
+        } catch {
+            throw CodexKeyringError.manifestRollbackFailed(
+                originalReason: originalError.localizedDescription,
+                rollbackReason: error.localizedDescription
+            )
+        }
     }
 }

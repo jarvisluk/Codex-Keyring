@@ -2,30 +2,36 @@ import Foundation
 import CodexKeyringDomain
 
 public struct ChatGPTQuotaClient: AccountQuotaQuerying, @unchecked Sendable {
-    public static let defaultBaseURL = URL(string: "https://chatgpt.com/backend-api")!
+    public static let defaultBaseURL = BundledURL.https(
+        host: "chatgpt.com",
+        path: "/backend-api"
+    )
 
     private let baseURL: URL
     private let issuer: URL
     private let clientID: String
     private let urlSession: URLSession
     private let authReader: AuthFileReading
+    private let ioQueue: DispatchQueue
 
     public init(
         baseURL: URL = Self.defaultBaseURL,
         issuer: URL = ChatGPTOAuthLoginService.openAIIssuer,
         clientID: String = ChatGPTOAuthLoginService.clientID,
         urlSession: URLSession = .shared,
-        authReader: AuthFileReading = AuthFileParser()
+        authReader: AuthFileReading = AuthFileParser(),
+        ioQueue: DispatchQueue = DispatchQueue(label: "com.junrong.CodexKeyring.QuotaClient")
     ) {
         self.baseURL = baseURL
         self.issuer = issuer
         self.clientID = clientID
         self.urlSession = urlSession
         self.authReader = authReader
+        self.ioQueue = ioQueue
     }
 
     public func queryQuota(for request: AccountQuotaQueryRequest) async throws -> AccountQuotaQueryResult {
-        var auth = try loadChatGPTAuth(from: request.snapshotURL)
+        var auth = try await loadChatGPTAuth(from: request.snapshotURL)
         var updatedMetadata: AuthMetadata?
 
         if shouldRefreshAccessToken(auth.accessToken) {
@@ -64,35 +70,51 @@ public struct ChatGPTQuotaClient: AccountQuotaQuerying, @unchecked Sendable {
 
     // MARK: - Auth loading and refresh
 
-    private func loadChatGPTAuth(from url: URL) throws -> StoredChatGPTAuth {
-        guard FileManager.default.fileExists(atPath: url.path) else {
+    private func loadChatGPTAuth(from url: URL) async throws -> StoredChatGPTAuth {
+        try await performIO {
+            try self.loadChatGPTAuthSync(from: url)
+        }
+    }
+
+    private func loadChatGPTAuthSync(from url: URL) throws -> StoredChatGPTAuth {
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
             throw CodexKeyringError.authFileMissing(url)
         }
-        let data = try Data(contentsOf: url)
+        guard !isDirectory.boolValue else {
+            throw CodexKeyringError.authFileUnreadable
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw CodexKeyringError.authFileUnreadable
+        }
         let object = try jsonObject(from: data)
         guard let tokens = object["tokens"] as? [String: Any] else {
             throw CodexKeyringError.unsupportedAuthShape
         }
-        let authMode = object["auth_mode"] as? String ?? "chatgpt"
+        let authMode = nonEmpty(object["auth_mode"] as? String) ?? "chatgpt"
         guard authMode == "chatgpt" else {
             throw CodexKeyringError.quotaQueryFailed(reason: "Only ChatGPT OAuth accounts expose Codex quota.")
         }
 
-        let accessToken = tokens["access_token"] as? String
-        let refreshToken = tokens["refresh_token"] as? String
-        guard accessToken?.isEmpty == false || refreshToken?.isEmpty == false else {
+        let accessToken = nonEmpty(tokens["access_token"] as? String)
+        let refreshToken = nonEmpty(tokens["refresh_token"] as? String)
+        let idToken = nonEmpty(tokens["id_token"] as? String)
+        guard accessToken != nil || refreshToken != nil else {
             throw CodexKeyringError.quotaRequiresRelogin(reason: "The saved auth snapshot has no access or refresh token.")
         }
 
-        let tokenMetadata = TokenMetadata.from(accessToken: accessToken, idToken: tokens["id_token"] as? String)
+        let tokenMetadata = TokenMetadata.from(accessToken: accessToken, idToken: idToken)
         let accountID = nonEmpty(tokens["account_id"] as? String)
             ?? tokenMetadata.accountID
 
         return StoredChatGPTAuth(
             sourceObject: object,
             accessToken: accessToken ?? "",
-            refreshToken: nonEmpty(refreshToken),
-            idToken: nonEmpty(tokens["id_token"] as? String),
+            refreshToken: refreshToken,
+            idToken: idToken,
             accountID: accountID,
             planType: tokenMetadata.planType,
             email: tokenMetadata.email
@@ -121,11 +143,15 @@ public struct ChatGPTQuotaClient: AccountQuotaQuerying, @unchecked Sendable {
         updated.accountID = updated.accountID
             ?? TokenMetadata.from(accessToken: refreshResponse.accessToken, idToken: refreshResponse.idToken).accountID
 
-        try persist(updated, to: request.snapshotURL)
+        // For the active account, keep the live Codex auth valid first. If the
+        // later snapshot write fails, the file watcher can still re-capture it
+        // from the now-fresh live auth instead of leaving Codex with a spent
+        // refresh token.
         if let liveAuthFileURL = request.liveAuthFileURL {
-            try persist(updated, to: liveAuthFileURL)
+            try await persist(updated, to: liveAuthFileURL)
         }
-        return try loadChatGPTAuth(from: request.snapshotURL)
+        try await persist(updated, to: request.snapshotURL)
+        return try await loadChatGPTAuth(from: request.snapshotURL)
     }
 
     private func refreshTokens(refreshToken: String) async throws -> RefreshTokenResponse {
@@ -146,18 +172,32 @@ public struct ChatGPTQuotaClient: AccountQuotaQuerying, @unchecked Sendable {
         }
         guard (200..<300).contains(http.statusCode) else {
             if http.statusCode == 401 {
-                throw CodexKeyringError.quotaRequiresRelogin(reason: refreshFailureReason(from: data))
+                throw CodexKeyringError.quotaRequiresRelogin(
+                    reason: refreshFailureReason(statusCode: http.statusCode, data: data)
+                )
             }
             throw CodexKeyringError.quotaQueryFailed(reason: "Token refresh returned HTTP \(http.statusCode).")
         }
         do {
-            return try JSONDecoder().decode(RefreshTokenResponse.self, from: data)
+            let decoded = try JSONDecoder().decode(RefreshTokenResponse.self, from: data)
+            guard nonEmpty(decoded.accessToken) != nil else {
+                throw CodexKeyringError.quotaQueryFailed(reason: "Token refresh returned no access token.")
+            }
+            return decoded
+        } catch let error as CodexKeyringError {
+            throw error
         } catch {
             throw CodexKeyringError.quotaQueryFailed(reason: "Token refresh returned unreadable JSON.")
         }
     }
 
-    private func persist(_ auth: StoredChatGPTAuth, to url: URL) throws {
+    private func persist(_ auth: StoredChatGPTAuth, to url: URL) async throws {
+        try await performIO {
+            try self.persistSync(auth, to: url)
+        }
+    }
+
+    private func persistSync(_ auth: StoredChatGPTAuth, to url: URL) throws {
         var object = auth.sourceObject
         var tokens = object["tokens"] as? [String: Any] ?? [:]
         tokens["access_token"] = auth.accessToken
@@ -179,16 +219,17 @@ public struct ChatGPTQuotaClient: AccountQuotaQuerying, @unchecked Sendable {
             options: [.prettyPrinted, .sortedKeys]
         )
         let directory = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let temp = directory.appendingPathComponent(".\(url.lastPathComponent).tmp-\(UUID().uuidString)")
         do {
+            try PrivateFilePermissions.createDirectory(at: directory)
             try data.write(to: temp, options: [.atomic])
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temp.path)
+            try PrivateFilePermissions.setFile(at: temp)
             if FileManager.default.fileExists(atPath: url.path) {
                 _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
             } else {
                 try FileManager.default.moveItem(at: temp, to: url)
             }
+            try PrivateFilePermissions.setFile(at: url)
         } catch {
             try? FileManager.default.removeItem(at: temp)
             throw CodexKeyringError.fileSystemFailure(reason: "Could not write refreshed auth snapshot: \(error.localizedDescription)")
@@ -228,7 +269,9 @@ public struct ChatGPTQuotaClient: AccountQuotaQuerying, @unchecked Sendable {
     }
 
     private var usageURL: URL {
-        URL(string: baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/wham/usage")!
+        baseURL
+            .appendingPathComponent("wham")
+            .appendingPathComponent("usage")
     }
 
     private func makeSnapshot(
@@ -313,15 +356,31 @@ public struct ChatGPTQuotaClient: AccountQuotaQuerying, @unchecked Sendable {
     // MARK: - Helpers
 
     private func jsonObject(from data: Data) throws -> [String: Any] {
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let parsed = try? JSONSerialization.jsonObject(with: data),
+              let object = parsed as? [String: Any]
+        else {
             throw CodexKeyringError.authFileUnreadable
         }
         return object
     }
 
-    private func refreshFailureReason(from data: Data) -> String {
+    private func performIO<T: Sendable>(
+        _ work: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            ioQueue.async {
+                do {
+                    continuation.resume(returning: try work())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func refreshFailureReason(statusCode: Int, data: Data) -> String {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return "The refresh token was rejected."
+            return OAuthErrorSanitizer.tokenEndpointFailureReason(statusCode: statusCode, data: data)
         }
         if let error = object["error"] as? [String: Any],
            let code = error["code"] as? String
@@ -334,14 +393,16 @@ public struct ChatGPTQuotaClient: AccountQuotaQuerying, @unchecked Sendable {
             case "refresh_token_invalidated":
                 return "The refresh token was revoked."
             default:
-                return "The refresh token was rejected."
+                break
             }
         }
-        return "The refresh token was rejected."
+        return OAuthErrorSanitizer.tokenEndpointFailureReason(statusCode: statusCode, data: data)
     }
 
     private func nonEmpty(_ value: String?) -> String? {
-        guard let value, !value.isEmpty else { return nil }
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
         return value
     }
 }
@@ -350,7 +411,7 @@ private enum QuotaClientError: Error {
     case unauthorized
 }
 
-private struct StoredChatGPTAuth {
+private struct StoredChatGPTAuth: @unchecked Sendable {
     var sourceObject: [String: Any]
     var accessToken: String
     var refreshToken: String?
@@ -566,7 +627,7 @@ private struct TokenMetadata {
     }
 
     private static func decodeJWTPayload(_ token: String) -> [String: Any]? {
-        let parts = token.split(separator: ".")
+        let parts = token.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".")
         guard parts.count >= 2 else { return nil }
         var payload = String(parts[1])
             .replacingOccurrences(of: "-", with: "+")
@@ -587,7 +648,9 @@ private struct TokenMetadata {
     }
 
     private static func string(_ value: Any?) -> String? {
-        guard let string = value as? String, !string.isEmpty else { return nil }
-        return string
+        guard let string = value as? String else { return nil }
+        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 }

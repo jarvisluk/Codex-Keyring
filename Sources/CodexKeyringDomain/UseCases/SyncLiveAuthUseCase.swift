@@ -6,6 +6,9 @@ public struct SyncLiveAuthResult: Sendable, Equatable {
     /// True when the live auth fingerprint moved (i.e. snapshot bytes were
     /// rewritten with a fresher refresh-token rotation).
     public let didUpdateSnapshot: Bool
+    /// True when the saved manifest metadata was refreshed from the live auth
+    /// without necessarily rewriting the snapshot bytes.
+    public let didUpdateMetadata: Bool
     /// True when the manifest's `activeAccountID` was reconciled against the
     /// live file (e.g. user switched accounts outside this app).
     public let didReassignActive: Bool
@@ -13,16 +16,19 @@ public struct SyncLiveAuthResult: Sendable, Equatable {
     public init(
         updatedAccountID: UUID?,
         didUpdateSnapshot: Bool,
+        didUpdateMetadata: Bool = false,
         didReassignActive: Bool
     ) {
         self.updatedAccountID = updatedAccountID
         self.didUpdateSnapshot = didUpdateSnapshot
+        self.didUpdateMetadata = didUpdateMetadata
         self.didReassignActive = didReassignActive
     }
 
     public static let noop = SyncLiveAuthResult(
         updatedAccountID: nil,
         didUpdateSnapshot: false,
+        didUpdateMetadata: false,
         didReassignActive: false
     )
 }
@@ -56,7 +62,7 @@ public struct SyncLiveAuthUseCase: Sendable {
 
     @discardableResult
     public func callAsFunction() async throws -> SyncLiveAuthResult {
-        guard let live = try? await authReader.read(from: installer.liveAuthFileURL) else {
+        guard let live = try await readLiveAuthIfPresent() else {
             return .noop
         }
         var manifest = try await repository.load()
@@ -72,27 +78,26 @@ public struct SyncLiveAuthUseCase: Sendable {
         liveURL: URL,
         manifest: inout AccountManifest
     ) async throws -> SyncLiveAuthResult {
-        guard let match = match(for: live, in: manifest) else {
+        guard let match = AccountIdentityMatcher.firstMatchingAccount(for: live, in: manifest.accounts) else {
             return .noop
         }
 
         var didUpdateSnapshot = false
-        if match.fingerprint != live.fingerprint {
+        var didUpdateMetadata = false
+        let shouldRewriteSnapshot = match.fingerprint != live.fingerprint
+        if shouldRewriteSnapshot {
             _ = try await repository.writeSnapshot(from: liveURL, for: match.id)
-            if let index = manifest.accounts.firstIndex(where: { $0.id == match.id }) {
-                var updated = manifest.accounts[index]
-                updated.fingerprint = live.fingerprint
-                updated.email = live.email.isEmpty ? updated.email : live.email
-                updated.plan = live.plan.isEmpty ? updated.plan : live.plan
-                updated.authMode = live.authMode.isEmpty ? updated.authMode : live.authMode
-                updated.accountIdentifier = live.accountIdentifier.isEmpty
-                    ? updated.accountIdentifier
-                    : live.accountIdentifier
-                updated.tokenExpiresAt = live.tokenExpiresAt
+            didUpdateSnapshot = true
+        }
+
+        if let index = manifest.accounts.firstIndex(where: { $0.id == match.id }) {
+            let original = manifest.accounts[index]
+            var updated = AuthMetadataMergePolicy().merged(live, into: original)
+            if updated != original {
                 updated.updatedAt = clock.now()
                 manifest.accounts[index] = updated
+                didUpdateMetadata = true
             }
-            didUpdateSnapshot = true
         }
 
         var didReassignActive = false
@@ -101,40 +106,23 @@ public struct SyncLiveAuthUseCase: Sendable {
             didReassignActive = true
         }
 
-        if didUpdateSnapshot || didReassignActive {
+        if didUpdateSnapshot || didUpdateMetadata || didReassignActive {
             try await repository.save(manifest)
         }
 
         return SyncLiveAuthResult(
             updatedAccountID: match.id,
             didUpdateSnapshot: didUpdateSnapshot,
+            didUpdateMetadata: didUpdateMetadata,
             didReassignActive: didReassignActive
         )
     }
 
-    /// Locate the saved account that the current live auth most likely
-    /// belongs to. Preference order:
-    ///   1. Exact fingerprint match (no token rotation has happened).
-    ///   2. Same stable OAuth `accountIdentifier` (token has been rotated by
-    ///      Codex App – we still know which saved account this belongs to).
-    private func match(for live: AuthMetadata, in manifest: AccountManifest) -> CodexAccount? {
-        if let exact = manifest.accounts.first(where: { $0.fingerprint == live.fingerprint }) {
-            return exact
-        }
-        let identifier = live.accountIdentifier
-        guard SyncLiveAuthUseCase.isStable(identifier: identifier) else {
+    private func readLiveAuthIfPresent() async throws -> AuthMetadata? {
+        do {
+            return try await authReader.read(from: installer.liveAuthFileURL)
+        } catch CodexKeyringError.authFileMissing {
             return nil
         }
-        return manifest.accounts.first { account in
-            account.accountIdentifier == identifier
-                && SyncLiveAuthUseCase.isStable(identifier: account.accountIdentifier)
-        }
-    }
-
-    /// `AuthMetadataParser` falls back to `"api-key"` when the OAuth account_id
-    /// is unavailable. That value is shared across every API-key auth file, so
-    /// it isn't safe to treat as a unique identity for snapshot syncing.
-    private static func isStable(identifier: String) -> Bool {
-        !identifier.isEmpty && identifier != "api-key"
     }
 }

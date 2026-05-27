@@ -15,6 +15,10 @@ public enum CodexKeyringError: Error, Equatable, Sendable {
     case codexLoginUnexpectedResponse(reason: String)
     case quotaQueryFailed(reason: String)
     case quotaRequiresRelogin(reason: String)
+    case currentAuthSyncFailed(reason: String)
+    case previousAuthRestoreFailed(reason: String, recoveryPath: String?)
+    case manifestRollbackFailed(originalReason: String, rollbackReason: String)
+    case snapshotCleanupFailed(originalReason: String, cleanupReason: String, snapshotFileName: String)
 }
 
 extension CodexKeyringError: LocalizedError {
@@ -30,6 +34,8 @@ extension CodexKeyringError: LocalizedError {
             return "The saved auth snapshot is missing."
         case .backupFailed(let reason):
             return "Could not back up the current Codex auth before switching: \(reason)"
+        case .currentAuthSyncFailed(let reason):
+            return "Could not save the current Codex auth back to its saved account: \(reason)"
         case .fileSystemFailure(let reason):
             return "Local storage operation failed: \(reason)"
         case .launchAtLoginUnsupported:
@@ -48,6 +54,15 @@ extension CodexKeyringError: LocalizedError {
             return "Could not read Codex quota: \(reason)"
         case .quotaRequiresRelogin(let reason):
             return "Codex quota requires signing in again: \(reason)"
+        case .previousAuthRestoreFailed(let reason, let recoveryPath):
+            if let recoveryPath {
+                return "Previous Codex auth could not be restored: \(reason). A recovery copy was kept at \(recoveryPath)."
+            }
+            return "Previous Codex auth could not be restored: \(reason)"
+        case .manifestRollbackFailed(let originalReason, let rollbackReason):
+            return "Account manifest rollback failed after an earlier storage error. Original error: \(originalReason). Rollback error: \(rollbackReason)"
+        case .snapshotCleanupFailed(let originalReason, let cleanupReason, let snapshotFileName):
+            return "Auth snapshot cleanup failed after an earlier storage error. Original error: \(originalReason). Cleanup error: \(cleanupReason). Snapshot file: \(snapshotFileName)"
         }
     }
 }

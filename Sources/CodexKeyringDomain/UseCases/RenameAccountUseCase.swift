@@ -3,6 +3,7 @@ import Foundation
 public struct RenameAccountResult: Sendable {
     public let state: AccountState
     public let newAlias: String
+    public let didRename: Bool
 }
 
 public struct RenameAccountUseCase: Sendable {
@@ -39,20 +40,38 @@ public struct RenameAccountUseCase: Sendable {
                     settings: manifest.settings,
                     currentAuthMetadata: try? await authReader.read(from: installer.liveAuthFileURL)
                 ),
-                newAlias: newAlias
+                newAlias: newAlias,
+                didRename: false
             )
         }
 
         let existing = manifest.accounts[index]
-        let cleaned = aliasPolicy.clean(newAlias, fallback: existing.alias)
+        let cleaned = aliasPolicy.cleanAllowingEmpty(newAlias)
         let otherAliases = manifest.accounts.enumerated()
             .compactMap { $0.offset == index ? nil : $0.element.alias }
-        let unique = aliasPolicy.uniquified(cleaned, existingAliases: otherAliases)
+        let unique = cleaned.isEmpty
+            ? cleaned
+            : aliasPolicy.uniquified(cleaned, existingAliases: otherAliases)
+
+        if unique == existing.alias {
+            let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
+            return RenameAccountResult(
+                state: AccountState(
+                    accounts: manifest.accounts,
+                    activeAccountID: manifest.activeAccountID,
+                    settings: manifest.settings,
+                    currentAuthMetadata: currentAuth
+                ),
+                newAlias: existing.alias,
+                didRename: false
+            )
+        }
+
         var updated = existing
         updated.alias = unique
         updated.updatedAt = clock.now()
         manifest.accounts[index] = updated
-        manifest.accounts.sort { $0.alias.localizedCaseInsensitiveCompare($1.alias) == .orderedAscending }
+        manifest.accounts.sort(by: CodexAccount.displayOrderPrecedes)
         try await repository.save(manifest)
 
         let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
@@ -63,7 +82,8 @@ public struct RenameAccountUseCase: Sendable {
                 settings: manifest.settings,
                 currentAuthMetadata: currentAuth
             ),
-            newAlias: unique
+            newAlias: unique,
+            didRename: true
         )
     }
 }

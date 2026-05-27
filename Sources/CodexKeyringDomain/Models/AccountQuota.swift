@@ -123,13 +123,11 @@ public struct QuotaBucket: Codable, Equatable, Sendable, Identifiable {
     }
 
     public var id: String {
-        limitID ?? limitName ?? "codex"
+        normalizedNonEmpty(limitID) ?? normalizedNonEmpty(limitName) ?? "codex"
     }
 
     public var displayName: String {
-        if let limitName, !limitName.isEmpty { return limitName }
-        if let limitID, !limitID.isEmpty { return limitID }
-        return "codex"
+        normalizedNonEmpty(limitName) ?? normalizedNonEmpty(limitID) ?? "codex"
     }
 
     public var remainingPercent: Double? {
@@ -140,7 +138,7 @@ public struct QuotaBucket: Codable, Equatable, Sendable, Identifiable {
 
     public var isUnlimited: Bool {
         if credits?.unlimited == true { return true }
-        guard windows.isEmpty, rateLimitReachedType?.isEmpty != false else { return false }
+        guard windows.isEmpty, normalizedNonEmpty(rateLimitReachedType) == nil else { return false }
         return Self.isUnmeteredPlan(planType)
     }
 
@@ -150,7 +148,7 @@ public struct QuotaBucket: Codable, Equatable, Sendable, Identifiable {
         rateLimitReachedType: String?,
         planType: String?
     ) -> QuotaHealth {
-        if let rateLimitReachedType, !rateLimitReachedType.isEmpty {
+        if normalizedNonEmpty(rateLimitReachedType) != nil {
             return .blocked
         }
         if credits?.isDepleted == true {
@@ -170,7 +168,7 @@ public struct QuotaBucket: Codable, Equatable, Sendable, Identifiable {
     }
 
     private static func isUnmeteredPlan(_ planType: String?) -> Bool {
-        guard let normalized = planType?.lowercased() else { return false }
+        guard let normalized = normalizedNonEmpty(planType)?.lowercased() else { return false }
         return normalized == "business" || normalized == "enterprise"
     }
 }
@@ -200,12 +198,23 @@ public struct AccountQuotaSnapshot: Codable, Equatable, Sendable {
     }
 
     public var primaryBucket: QuotaBucket? {
-        buckets.first(where: { $0.limitID == "codex" }) ?? buckets.first
+        buckets.first { bucket in
+            normalizedNonEmpty(bucket.limitID)?.localizedCaseInsensitiveCompare("codex") == .orderedSame
+        } ?? buckets.first
     }
 
     public var health: QuotaHealth {
         primaryBucket?.health ?? .error
     }
+}
+
+private func normalizedNonEmpty(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !trimmed.isEmpty
+    else {
+        return nil
+    }
+    return trimmed
 }
 
 public struct AccountQuotaState: Equatable, Sendable {

@@ -3,6 +3,7 @@ import Foundation
 public struct LoginNewAccountResult: Sendable {
     public let state: AccountState
     public let savedAlias: String
+    public let cleanupWarningReason: String?
 }
 
 /// Run the Codex browser login flow, save the newly written auth as a snapshot,
@@ -39,6 +40,7 @@ public struct LoginNewAccountUseCase: Sendable {
     ) async throws -> LoginNewAccountResult {
         let restoreURL = try await installer.stageLiveAuthIfPresent(prefix: "pre-login")
         var newLoginURL: URL?
+        var didRestorePreviousLiveAuth = false
         let result: LoginNewAccountResult
 
         do {
@@ -46,6 +48,7 @@ public struct LoginNewAccountUseCase: Sendable {
             let stagedLoginURL = try await installer.stageRequiredLiveAuth(prefix: "new-login")
             newLoginURL = stagedLoginURL
             try await installer.restoreLiveAuth(from: restoreURL)
+            didRestorePreviousLiveAuth = true
 
             let addResult = try await AddAccountUseCase(
                 repository: repository,
@@ -68,17 +71,56 @@ public struct LoginNewAccountUseCase: Sendable {
 
             result = LoginNewAccountResult(
                 state: state,
-                savedAlias: addResult.savedAlias
+                savedAlias: addResult.savedAlias,
+                cleanupWarningReason: nil
             )
         } catch {
-            try? await installer.restoreLiveAuth(from: restoreURL)
-            await installer.removeStagedAuth(restoreURL)
-            await installer.removeStagedAuth(newLoginURL)
+            let restoredPreviousLiveAuth: Bool
+            if didRestorePreviousLiveAuth {
+                restoredPreviousLiveAuth = true
+            } else {
+                restoredPreviousLiveAuth = await tryRestorePreviousLiveAuth(from: restoreURL)
+            }
+            if restoredPreviousLiveAuth {
+                _ = await cleanupStagedAuthFiles([restoreURL])
+            }
+            _ = await cleanupStagedAuthFiles([newLoginURL])
+            if !restoredPreviousLiveAuth {
+                throw CodexKeyringError.previousAuthRestoreFailed(
+                    reason: error.localizedDescription,
+                    recoveryPath: restoreURL?.path
+                )
+            }
             throw error
         }
 
-        await installer.removeStagedAuth(restoreURL)
-        await installer.removeStagedAuth(newLoginURL)
-        return result
+        let cleanupWarningReason = await cleanupStagedAuthFiles([restoreURL, newLoginURL])
+        return LoginNewAccountResult(
+            state: result.state,
+            savedAlias: result.savedAlias,
+            cleanupWarningReason: cleanupWarningReason
+        )
+    }
+
+    private func tryRestorePreviousLiveAuth(from stagedURL: URL?) async -> Bool {
+        do {
+            try await installer.restoreLiveAuth(from: stagedURL)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func cleanupStagedAuthFiles(_ urls: [URL?]) async -> String? {
+        var failures: [String] = []
+        for url in urls.compactMap({ $0 }) {
+            do {
+                try await installer.removeStagedAuth(url)
+            } catch {
+                failures.append("\(url.path): \(error.localizedDescription)")
+            }
+        }
+        guard !failures.isEmpty else { return nil }
+        return failures.joined(separator: "; ")
     }
 }

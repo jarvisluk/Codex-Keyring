@@ -4,10 +4,11 @@ public struct AddAccountResult: Sendable {
     public let state: AccountState
     public let savedAlias: String
     public let wasUpdate: Bool
+    public let agentPreferencesWarningReason: String?
 }
 
 /// Parse an auth file, then add it as a new snapshot or update an existing one
-/// (matched by fingerprint).
+/// (matched by fingerprint, then stable OAuth account identifier).
 public struct AddAccountUseCase: Sendable {
     private let repository: AccountRepository
     private let installer: CodexAuthInstalling
@@ -35,7 +36,7 @@ public struct AddAccountUseCase: Sendable {
     public func callAsFunction(
         sourceURL: URL,
         requestedAlias: String?,
-        activate: Bool = true
+        activate: Bool
     ) async throws -> AddAccountResult {
         let metadata = try await authReader.read(from: sourceURL)
         var manifest = try await repository.load()
@@ -47,22 +48,41 @@ public struct AddAccountUseCase: Sendable {
         // state: i.e. we're activating, and the source IS the live auth file.
         // Otherwise the captured preferences belong to whoever currently owns
         // ~/.codex/, not to the new snapshot.
-        let initialPreferences: AccountAgentPreferences? = await {
-            guard activate, sourceURL == installer.liveAuthFileURL else { return nil }
-            let captured = try? await preferencesPort.captureCurrent()
-            return (captured?.isEmpty == false) ? captured : nil
-        }()
+        let initialPreferenceCapture: (
+            preferences: AccountAgentPreferences?,
+            warningReason: String?
+        )
+        if manifest.settings.preserveAgentPreferencesPerAccount,
+           activate,
+           sourceURL == installer.liveAuthFileURL
+        {
+            do {
+                let captured = try await preferencesPort.captureCurrent()
+                initialPreferenceCapture = (captured.isEmpty ? nil : captured, nil)
+            } catch {
+                initialPreferenceCapture = (nil, error.localizedDescription)
+            }
+        } else {
+            initialPreferenceCapture = (nil, nil)
+        }
+        let initialPreferences = initialPreferenceCapture.preferences
+        let agentPreferencesWarningReason = initialPreferenceCapture.warningReason
 
-        if let index = manifest.accounts.firstIndex(where: { $0.fingerprint == metadata.fingerprint }) {
+        if let index = AccountIdentityMatcher.firstMatchingIndex(for: metadata, in: manifest.accounts) {
+            let originalManifest = manifest
             let existing = manifest.accounts[index]
-            _ = try await repository.writeSnapshot(from: sourceURL, for: existing.id)
-            var updated = existing
-            updated.alias = cleaned
-            updated.email = metadata.email
-            updated.plan = metadata.plan
-            updated.authMode = metadata.authMode
-            updated.accountIdentifier = metadata.accountIdentifier
-            updated.tokenExpiresAt = metadata.tokenExpiresAt
+            let requestedUpdateAlias = requestedAlias?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let updateAlias = if requestedUpdateAlias?.isEmpty == false {
+                cleaned
+            } else {
+                existing.alias
+            }
+            let otherAliases = manifest.accounts.enumerated().compactMap { offset, account in
+                offset == index ? nil : account.alias
+            }
+            let uniqueAlias = aliasPolicy.uniquified(updateAlias, existingAliases: otherAliases)
+            var updated = AuthMetadataMergePolicy().merged(metadata, into: existing)
+            updated.alias = uniqueAlias
             updated.updatedAt = now
             if let initialPreferences {
                 updated.agentPreferences = initialPreferences
@@ -71,7 +91,14 @@ public struct AddAccountUseCase: Sendable {
             if activate {
                 manifest.activeAccountID = updated.id
             }
+            manifest.accounts = sorted(manifest.accounts)
             try await repository.save(manifest)
+            do {
+                _ = try await repository.writeSnapshot(from: sourceURL, for: existing.id)
+            } catch {
+                try await rollbackManifest(to: originalManifest, after: error)
+                throw error
+            }
 
             let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
             return AddAccountResult(
@@ -82,7 +109,8 @@ public struct AddAccountUseCase: Sendable {
                     currentAuthMetadata: currentAuth
                 ),
                 savedAlias: updated.alias,
-                wasUpdate: true
+                wasUpdate: true,
+                agentPreferencesWarningReason: agentPreferencesWarningReason
             )
         }
 
@@ -109,7 +137,12 @@ public struct AddAccountUseCase: Sendable {
         if activate {
             manifest.activeAccountID = account.id
         }
-        try await repository.save(manifest)
+        do {
+            try await repository.save(manifest)
+        } catch {
+            try await cleanupSnapshot(named: snapshotName, after: error)
+            throw error
+        }
 
         let currentAuth = try? await authReader.read(from: installer.liveAuthFileURL)
         return AddAccountResult(
@@ -120,11 +153,35 @@ public struct AddAccountUseCase: Sendable {
                 currentAuthMetadata: currentAuth
             ),
             savedAlias: account.alias,
-            wasUpdate: false
+            wasUpdate: false,
+            agentPreferencesWarningReason: agentPreferencesWarningReason
         )
     }
 
     private func sorted(_ accounts: [CodexAccount]) -> [CodexAccount] {
-        accounts.sorted { $0.alias.localizedCaseInsensitiveCompare($1.alias) == .orderedAscending }
+        accounts.sorted(by: CodexAccount.displayOrderPrecedes)
+    }
+
+    private func rollbackManifest(to originalManifest: AccountManifest, after originalError: Error) async throws {
+        do {
+            try await repository.save(originalManifest)
+        } catch {
+            throw CodexKeyringError.manifestRollbackFailed(
+                originalReason: originalError.localizedDescription,
+                rollbackReason: error.localizedDescription
+            )
+        }
+    }
+
+    private func cleanupSnapshot(named snapshotName: String, after originalError: Error) async throws {
+        do {
+            try await repository.deleteSnapshot(named: snapshotName)
+        } catch {
+            throw CodexKeyringError.snapshotCleanupFailed(
+                originalReason: originalError.localizedDescription,
+                cleanupReason: error.localizedDescription,
+                snapshotFileName: snapshotName
+            )
+        }
     }
 }

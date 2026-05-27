@@ -30,7 +30,11 @@ public struct UpdateSettingsUseCase: Sendable {
 
     private func mutate(_ change: (inout AppSettings) -> Void) async throws -> AppSettings {
         var manifest = try await repository.load()
+        let original = manifest.settings
         change(&manifest.settings)
+        guard manifest.settings != original else {
+            return manifest.settings
+        }
         try await repository.save(manifest)
         return manifest.settings
     }

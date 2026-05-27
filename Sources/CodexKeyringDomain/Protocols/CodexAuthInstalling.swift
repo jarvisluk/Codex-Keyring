@@ -24,5 +24,5 @@ public protocol CodexAuthInstalling: Sendable {
     func restoreLiveAuth(from stagedURL: URL?) async throws
 
     /// Delete a temporary staged auth file.
-    func removeStagedAuth(_ url: URL?) async
+    func removeStagedAuth(_ url: URL?) async throws
 }

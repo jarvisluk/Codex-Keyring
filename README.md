@@ -16,9 +16,15 @@ manager window, a persistent menu bar item, and local-only account snapshots.
 - Shows only metadata such as email, plan, auth mode, and a short fingerprint.
 - Keeps saved snapshots under:
   `~/Library/Application Support/CodexKeyring/Accounts`.
+- Writes auth snapshots, backups, and login staging copies with owner-only
+  `0600` file permissions.
 - Offers a menu bar item for quick switching and background use.
-- Restarts Codex App when switching so the desktop app can reload auth.
+- Can restart Codex App after switching so the desktop app reloads auth
+  immediately. This is enabled by default and can be changed in Settings.
 - Includes Launch at Login support through macOS ServiceManagement.
+- Optionally checks ChatGPT/Codex account quota for saved OAuth accounts and
+  refreshes rotated OAuth tokens back into their local snapshots. Network quota
+  checks are opt-in from Settings.
 - Keeps each saved snapshot in lock-step with `~/.codex/auth.json` so the
   rotating OAuth refresh token never goes stale: whenever Codex App rewrites
   the live auth file, the app captures the new bytes back into the matching
@@ -28,14 +34,11 @@ manager window, a persistent menu bar item, and local-only account snapshots.
   approval/sandbox mode, Full Access / Auto Review, and the "skip
   full-access confirm" toggle) and restores them on the next switch.
   Enabled by default; toggle off from Settings → "Remember per-account
-  agent settings". The switch flow restarts Codex App so the rewrite of
-  `~/.codex/config.toml` and `~/.codex/.codex-global-state.json` happens
-  while Codex App is stopped.
+  agent settings". Automatic restore requires "Restart Codex App after
+  switching accounts" so the rewrite of `~/.codex/config.toml` and
+  `~/.codex/.codex-global-state.json` happens while Codex App is stopped.
   Unrelated keys in those files (project trust levels, `[features]`,
   workspace history, window bounds, etc.) are preserved byte-for-byte.
-
-The first version intentionally avoids quota/account API calls. The setting is
-visible but disabled until a future version explicitly implements it.
 
 ## Build And Run
 
@@ -50,20 +53,80 @@ Useful modes:
 
 ```bash
 ./script/build_and_run.sh --verify
+./script/build_and_run.sh --verify --release
 ./script/build_and_run.sh --logs
 ./script/build_and_run.sh --telemetry
 ```
+
+`--verify` waits up to 10 seconds for the staged app process and main manager
+window to appear, then quits the smoke-tested app. Override the timeout with
+`VERIFY_TIMEOUT_SECONDS=20 ./script/build_and_run.sh --verify` when testing on a
+slower machine, or keep the app open for manual inspection with
+`VERIFY_KEEP_APP=1 ./script/build_and_run.sh --verify`. Add `--release` when
+you want the staged app bundle to use the optimized SwiftPM build. Set
+`SWIFT_WARNINGS_AS_ERRORS=1` when you want local run builds to match the stricter
+verification compiler settings.
+
+## Validate Changes
+
+```bash
+./script/verify.sh
+```
+
+This runs the standard local checks: `swift test` with Swift warnings promoted
+to errors, shell syntax validation for the scripts, `git diff --check`, and
+whitespace/conflict-marker checks for untracked source, test, script, and
+documentation files.
+
+After package graph, enum, or model shape changes, or if SwiftPM/xctest reports
+an unexpected signal from stale incremental build state, clear build artifacts
+before verifying:
+
+```bash
+./script/verify.sh --clean
+```
+
+For a full smoke test that also builds, launches, and verifies the staged app
+bundle, run:
+
+```bash
+./script/verify.sh --app
+```
+
+Before release-oriented changes, also compile the optimized SwiftPM build:
+
+```bash
+./script/verify.sh --release
+```
+
+Options compose, so `./script/verify.sh --clean --release --app` is the broadest
+local gate. It compiles tests and release builds with Swift warnings promoted to
+errors, then smoke-tests the staged release app bundle under the same warning
+policy.
 
 The Codex app Run action is wired in `.codex/environments/environment.toml`.
 
 ## Safe Basic Workflow
 
-1. Click the add button to open the Codex ChatGPT login page.
+1. Use the toolbar or Accounts menu to add a new Codex ChatGPT login.
 2. Complete login in the browser. The new auth snapshot is saved under this
    app's Application Support folder, while the current Codex auth is restored.
-3. Repeat the add flow for another account or import an existing auth snapshot.
-4. Switch accounts from the manager window or menu bar. The switch also
-   restarts Codex App so it reloads the new auth state.
+3. Use Save Current Login for the live `~/.codex/auth.json`, or import an
+   existing auth snapshot from the toolbar or Accounts menu. Imported snapshots
+   are saved inactive until you explicitly switch to them.
+4. Switch accounts from the manager window or menu bar. By default the switch
+   also restarts Codex App so it reloads the new auth state.
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| `Cmd-0` | Open Manager |
+| `Cmd-N` | Add New Login |
+| `Cmd-S` | Save Current Login |
+| `Cmd-Shift-I` | Import Auth Snapshot |
+| `Cmd-R` | Refresh Accounts |
+| `Cmd-Shift-R` | Refresh Quotas |
 
 ## Uninstall
 

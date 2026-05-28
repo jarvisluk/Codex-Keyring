@@ -2,6 +2,25 @@
 
 Guidance for AI coding agents (Cursor, Codex, Claude Code, etc.) working in this repo.
 
+## Merge Hygiene
+
+When syncing from `develop` or merging older feature branches, guard against
+deleted UI or behavior silently coming back from stale branch history.
+
+- Prefer cherry-picking the specific fix commits needed from old branches over
+  merging the whole branch.
+- Before merging a branch that touches UI, inspect the UI delta first:
+  `git diff develop...<branch> -- Sources/CodexKeyringUI/Views`.
+- Treat prior removals of UI copy, sections, menu items, and presentation
+  surfaces as intentional unless the user explicitly asks to restore them.
+- If a removed UI element must stay removed, keep that removal in a clear,
+  named commit and consider adding a narrow regression check for its unique
+  text or type name.
+- After any merge commit, review what actually entered through the merge:
+  `git diff <merge>^1..<merge> -- Sources/CodexKeyringUI/Views`.
+- Do not reintroduce previously removed UI from stale branches merely because
+  Git can merge it cleanly.
+
 ## Commit Messages
 
 All commits MUST follow [Conventional Commits](https://www.conventionalcommits.org/) in **English**.

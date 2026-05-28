@@ -9,13 +9,4 @@ extension View {
             self
         }
     }
-
-    @ViewBuilder
-    func hidesWindowToolbarSeparator() -> some View {
-        if #available(macOS 15.0, *) {
-            toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        } else {
-            self
-        }
-    }
 }

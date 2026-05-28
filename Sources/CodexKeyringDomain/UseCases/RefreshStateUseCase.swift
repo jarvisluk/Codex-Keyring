@@ -51,19 +51,10 @@ public struct RefreshStateUseCase: Sendable {
             refreshedMetadata = nil
         }
 
-        return AccountState(
-            accounts: manifest.accounts,
-            activeAccountID: manifest.activeAccountID,
-            settings: manifest.settings,
-            currentAuthMetadata: refreshedMetadata
-        )
+        return AccountState(manifest: manifest, currentAuthMetadata: refreshedMetadata)
     }
 
     private func readLiveAuthIfPresent() async throws -> AuthMetadata? {
-        do {
-            return try await authReader.read(from: installer.liveAuthFileURL)
-        } catch CodexKeyringError.authFileMissing {
-            return nil
-        }
+        try await authReader.readIfPresent(from: installer.liveAuthFileURL)
     }
 }

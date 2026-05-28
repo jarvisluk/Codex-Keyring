@@ -41,4 +41,25 @@ public struct AliasPolicy: Sendable {
         }
         return "\(alias)-\(index)"
     }
+
+    public func uniquified(
+        _ alias: String,
+        among accounts: some Sequence<CodexAccount>,
+        excluding excludedAccountID: UUID? = nil
+    ) -> String {
+        let aliases = accounts.lazy.compactMap { account in
+            account.id == excludedAccountID ? nil : account.alias
+        }
+        return uniquified(alias, existingAliases: aliases)
+    }
+
+    public func renameAlias(
+        _ alias: String,
+        for account: CodexAccount,
+        among accounts: some Sequence<CodexAccount>
+    ) -> String {
+        let cleaned = cleanAllowingEmpty(alias)
+        guard !cleaned.isEmpty else { return cleaned }
+        return uniquified(cleaned, among: accounts, excluding: account.id)
+    }
 }

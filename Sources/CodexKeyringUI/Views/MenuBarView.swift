@@ -1,11 +1,7 @@
-import AppKit
 import SwiftUI
-import CodexKeyringDomain
 
 public struct MenuBarView: View {
-    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var store: AccountStore
-    @EnvironmentObject private var settingsPresentation: SettingsPresentationStore
 
     public init() {}
 
@@ -16,190 +12,17 @@ public struct MenuBarView: View {
                 Divider()
             }
 
-            Button("Open Manager") {
-                openManagerWindow()
-            }
+            MenuBarOpenManagerAction()
+
+            MenuBarAddCurrentLoginAction()
+
+            MenuBarRefreshQuotasAction()
+
+            MenuBarAccountsSection()
 
             Divider()
 
-            Button("Add New Login") {
-                openAddNewLoginFlow()
-            }
-            .disabled(!store.canLoginNewAccount)
-
-            Button("Add Current Login") {
-                openAddCurrentLoginSheet()
-            }
-            .disabled(!store.canAddCurrentLogin)
-
-            Button("Import Auth Snapshot...") {
-                openImportAuthSnapshotPanel()
-            }
-            .disabled(!store.canImportAccount)
-
-            Divider()
-
-            Button("Refresh") {
-                store.refresh()
-            }
-            .disabled(!store.canRefreshAccounts)
-
-            Button("Refresh Quotas") {
-                store.refreshQuotasNow()
-            }
-            .disabled(!store.canRefreshQuotas)
-
-            if !store.accounts.isEmpty {
-                Divider()
-                ForEach(store.accounts) { account in
-                    let isActive = store.activeAccount?.id == account.id
-                    Button {
-                        guard !isActive else { return }
-                        store.switchTo(
-                            account,
-                            restartCodexApp: store.settings.restartCodexAppAfterSwitch
-                        )
-                    } label: {
-                        Label {
-                            Text(MenuBarAccountPresentation(account: account).title)
-                        } icon: {
-                            Image(systemName: isActive ? "checkmark.circle.fill" : "person.crop.circle")
-                                .foregroundStyle(isActive ? .green : .secondary)
-                        }
-                    }
-                    .disabled(!store.canSwitch(to: account))
-
-                    if let quotaState = store.quotaStates[account.id],
-                       let quotaLine = quotaState.menuDetailSummary {
-                        Button {} label: {
-                            Text(quotaLine)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(quotaState.health.tint)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            if let status = MenuBarStatusPresentation.make(
-                statusMessage: store.statusMessage,
-                lastError: store.lastError,
-                isBusy: store.isStatusBusy
-            ) {
-                Divider()
-                Label {
-                    Text(status.title)
-                } icon: {
-                    Image(systemName: status.systemImage)
-                        .foregroundStyle(status.tint)
-                }
-                .help(status.help)
-
-                if status.isError {
-                    Button("Clear Error") {
-                        store.clearError()
-                    }
-                }
-            }
-
-            Divider()
-
-            Button("Settings") {
-                openManagerWindow()
-                settingsPresentation.present()
-            }
-
-            Button("Quit") {
-                NSApp.terminate(nil)
-            }
+            MenuBarAppActionsSection()
         }
-    }
-
-    private func openManagerWindow() {
-        if let existingWindow = existingManagerWindow {
-            if existingWindow.isMiniaturized {
-                existingWindow.deminiaturize(nil)
-            }
-            existingWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        openWindow(id: "main")
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private func openAddNewLoginFlow() {
-        guard store.canLoginNewAccount else { return }
-        openManagerWindow()
-        MainWindowRequest.runAfterCurrentMainActorTurn {
-            MainWindowRequest.startNewLogin()
-        }
-    }
-
-    private func openAddCurrentLoginSheet() {
-        guard store.canAddCurrentLogin else { return }
-        openManagerWindow()
-        MainWindowRequest.runAfterCurrentMainActorTurn {
-            MainWindowRequest.showAddCurrentLoginSheet()
-        }
-    }
-
-    private func openImportAuthSnapshotPanel() {
-        guard store.canImportAccount else { return }
-        openManagerWindow()
-        MainWindowRequest.runAfterCurrentMainActorTurn {
-            MainWindowRequest.importAuthSnapshot()
-        }
-    }
-
-    private var existingManagerWindow: NSWindow? {
-        NSApp.windows.first { window in
-            window.identifier?.rawValue == "main"
-                || window.title == "Codex Keyring"
-        }
-    }
-}
-
-struct MenuBarAccountPresentation: Equatable {
-    let title: String
-
-    init(account: CodexAccount) {
-        title = account.displayName.cappedMenuBarText
-    }
-}
-
-struct MenuBarStatusPresentation {
-    let title: String
-    let help: String
-    let systemImage: String
-    let tint: Color
-    let isError: Bool
-
-    static func make(
-        statusMessage: String,
-        lastError: String?,
-        isBusy: Bool
-    ) -> MenuBarStatusPresentation? {
-        if let lastError {
-            return MenuBarStatusPresentation(
-                title: lastError.cappedMenuBarText,
-                help: lastError,
-                systemImage: "exclamationmark.triangle.fill",
-                tint: .red,
-                isError: true
-            )
-        }
-
-        let trimmedStatus = statusMessage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isBusy || !trimmedStatus.isEmpty && trimmedStatus != "Ready." else {
-            return nil
-        }
-        return MenuBarStatusPresentation(
-            title: trimmedStatus.cappedMenuBarText,
-            help: trimmedStatus,
-            systemImage: isBusy ? "hourglass" : "checkmark.circle",
-            tint: isBusy ? .secondary : .green,
-            isError: false
-        )
     }
 }

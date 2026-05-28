@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import CodexKeyringUI
 
@@ -17,7 +16,7 @@ struct CodexKeyringApp: App {
     }
 
     var body: some Scene {
-        Window("Codex Keyring", id: "main") {
+        Window(MainWindowPresenter.windowTitle, id: MainWindowPresenter.windowID) {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(settingsPresentation)
@@ -47,51 +46,17 @@ struct CodexKeyringApp: App {
                 .environmentObject(store)
                 .environmentObject(settingsPresentation)
         } label: {
-            Image(systemName: menuBarSystemImage)
-                .accessibilityLabel(menuBarStatusLabel)
-                .help(menuBarStatusLabel)
+            let presentation = AppMenuBarPresentation(activeAccount: store.activeAccount)
+            Image(systemName: presentation.systemImage)
+                .accessibilityLabel(presentation.statusLabel)
+                .help(presentation.statusLabel)
         }
         .menuBarExtraStyle(.menu)
     }
 
     @MainActor
     private func presentSettings() {
-        openManagerWindow()
+        MainWindowPresenter.open(using: openWindow)
         settingsPresentation.present()
-    }
-
-    @MainActor
-    private func openManagerWindow() {
-        if let existingWindow = existingManagerWindow {
-            if existingWindow.isMiniaturized {
-                existingWindow.deminiaturize(nil)
-            }
-            existingWindow.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-        openWindow(id: "main")
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    @MainActor
-    private var existingManagerWindow: NSWindow? {
-        NSApp.windows.first { window in
-            window.identifier?.rawValue == "main"
-                || window.title == "Codex Keyring"
-        }
-    }
-
-    private var menuBarSystemImage: String {
-        store.activeAccount == nil
-            ? "person.crop.circle.badge.questionmark"
-            : "person.crop.circle.badge.checkmark"
-    }
-
-    private var menuBarStatusLabel: String {
-        guard let activeAccount = store.activeAccount else {
-            return "Codex Keyring: no active saved account"
-        }
-        return "Codex Keyring: \(activeAccount.displayName) active"
     }
 }

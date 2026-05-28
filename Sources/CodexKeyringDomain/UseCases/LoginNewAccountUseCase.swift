@@ -1,21 +1,15 @@
 import Foundation
 
-public struct LoginNewAccountResult: Sendable {
-    public let state: AccountState
-    public let savedAlias: String
-    public let cleanupWarningReason: String?
-}
-
 /// Run the Codex browser login flow, save the newly written auth as a snapshot,
 /// then restore the user's previous live auth so the active account is unchanged.
 public struct LoginNewAccountUseCase: Sendable {
-    private let repository: any AccountRepository
-    private let installer: any CodexAuthInstalling
-    private let authReader: any AuthFileReading
-    private let loginService: any CodexLoginServicing
-    private let preferencesPort: any CodexAgentPreferencesPorting
-    private let clock: any Clock
-    private let aliasPolicy: AliasPolicy
+    let repository: any AccountRepository
+    let installer: any CodexAuthInstalling
+    let authReader: any AuthFileReading
+    let loginService: any CodexLoginServicing
+    let preferencesPort: any CodexAgentPreferencesPorting
+    let clock: any Clock
+    let aliasPolicy: AliasPolicy
 
     public init(
         repository: any AccountRepository,
@@ -50,30 +44,7 @@ public struct LoginNewAccountUseCase: Sendable {
             try await installer.restoreLiveAuth(from: restoreURL)
             didRestorePreviousLiveAuth = true
 
-            let addResult = try await AddAccountUseCase(
-                repository: repository,
-                installer: installer,
-                authReader: authReader,
-                preferencesPort: preferencesPort,
-                clock: clock,
-                aliasPolicy: aliasPolicy
-            )(
-                sourceURL: stagedLoginURL,
-                requestedAlias: nil,
-                activate: false
-            )
-
-            let state = try await RefreshStateUseCase(
-                repository: repository,
-                installer: installer,
-                authReader: authReader
-            )()
-
-            result = LoginNewAccountResult(
-                state: state,
-                savedAlias: addResult.savedAlias,
-                cleanupWarningReason: nil
-            )
+            result = try await saveInactiveNewAccount(from: stagedLoginURL)
         } catch {
             let restoredPreviousLiveAuth: Bool
             if didRestorePreviousLiveAuth {
@@ -100,27 +71,5 @@ public struct LoginNewAccountUseCase: Sendable {
             savedAlias: result.savedAlias,
             cleanupWarningReason: cleanupWarningReason
         )
-    }
-
-    private func tryRestorePreviousLiveAuth(from stagedURL: URL?) async -> Bool {
-        do {
-            try await installer.restoreLiveAuth(from: stagedURL)
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    private func cleanupStagedAuthFiles(_ urls: [URL?]) async -> String? {
-        var failures: [String] = []
-        for url in urls.compactMap({ $0 }) {
-            do {
-                try await installer.removeStagedAuth(url)
-            } catch {
-                failures.append("\(url.path): \(error.localizedDescription)")
-            }
-        }
-        guard !failures.isEmpty else { return nil }
-        return failures.joined(separator: "; ")
     }
 }

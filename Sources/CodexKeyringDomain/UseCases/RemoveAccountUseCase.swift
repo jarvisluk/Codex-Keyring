@@ -25,12 +25,7 @@ public struct RemoveAccountUseCase: Sendable {
         guard let index = manifest.accounts.firstIndex(where: { $0.id == accountID }) else {
             let currentAuth = try await readLiveAuthIfPresent()
             return RemoveAccountResult(
-                state: AccountState(
-                    accounts: manifest.accounts,
-                    activeAccountID: manifest.activeAccountID,
-                    settings: manifest.settings,
-                    currentAuthMetadata: currentAuth
-                ),
+                state: AccountState(manifest: manifest, currentAuthMetadata: currentAuth),
                 removedAlias: ""
             )
         }
@@ -59,22 +54,13 @@ public struct RemoveAccountUseCase: Sendable {
         }
 
         return RemoveAccountResult(
-            state: AccountState(
-                accounts: manifest.accounts,
-                activeAccountID: manifest.activeAccountID,
-                settings: manifest.settings,
-                currentAuthMetadata: currentAuth
-            ),
+            state: AccountState(manifest: manifest, currentAuthMetadata: currentAuth),
             removedAlias: removed.displayName
         )
     }
 
     private func readLiveAuthIfPresent() async throws -> AuthMetadata? {
-        do {
-            return try await authReader.read(from: installer.liveAuthFileURL)
-        } catch CodexKeyringError.authFileMissing {
-            return nil
-        }
+        try await authReader.readIfPresent(from: installer.liveAuthFileURL)
     }
 
     private func rollbackManifest(to originalManifest: AccountManifest, after originalError: Error) async throws {

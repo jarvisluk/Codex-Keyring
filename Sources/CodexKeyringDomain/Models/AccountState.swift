@@ -20,6 +20,18 @@ public struct AccountState: Equatable, Sendable {
 
     public static let empty = AccountState()
 
+    public init(
+        manifest: AccountManifest,
+        currentAuthMetadata: AuthMetadata?
+    ) {
+        self.init(
+            accounts: manifest.accounts,
+            activeAccountID: manifest.activeAccountID,
+            settings: manifest.settings,
+            currentAuthMetadata: currentAuthMetadata
+        )
+    }
+
     public var activeAccount: CodexAccount? {
         if let id = activeAccountID,
            let account = accounts.first(where: { $0.id == id }) {

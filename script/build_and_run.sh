@@ -16,6 +16,9 @@ APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+APP_ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.icns"
+APP_ICON_NAME="AppIcon"
+MENU_BAR_ICON_SOURCE="$ROOT_DIR/Resources/MenuBarIcon.svg"
 VERIFY_TIMEOUT_SECONDS="${VERIFY_TIMEOUT_SECONDS:-10}"
 VERIFY_KEEP_APP="${VERIFY_KEEP_APP:-0}"
 SWIFT_WARNINGS_AS_ERRORS="${SWIFT_WARNINGS_AS_ERRORS:-0}"
@@ -86,6 +89,8 @@ stop_app
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
+cp "$APP_ICON_SOURCE" "$APP_RESOURCES/$APP_ICON_NAME.icns"
+cp "$MENU_BAR_ICON_SOURCE" "$APP_RESOURCES/MenuBarIcon.svg"
 chmod +x "$APP_BINARY"
 
 cat >"$INFO_PLIST" <<PLIST
@@ -101,6 +106,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$BUNDLE_NAME</string>
   <key>CFBundleDisplayName</key>
   <string>$BUNDLE_NAME</string>
+  <key>CFBundleIconFile</key>
+  <string>$APP_ICON_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

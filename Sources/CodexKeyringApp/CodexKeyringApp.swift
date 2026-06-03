@@ -16,7 +16,7 @@ struct CodexKeyringApp: App {
         Window(MainWindowPresenter.windowTitle, id: MainWindowPresenter.windowID) {
             ContentView()
                 .environmentObject(store)
-                .frame(minWidth: 920, minHeight: 600)
+                .frame(minWidth: 760, minHeight: 500)
         }
         .defaultSize(width: 1040, height: 680)
         .windowResizability(.contentMinSize)

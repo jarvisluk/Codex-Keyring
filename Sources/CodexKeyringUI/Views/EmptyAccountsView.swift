@@ -33,7 +33,7 @@ struct EmptyAccountsView: View {
             EmptyAccountsActions(
                 presentation: presentation,
                 onSaveCurrentLogin: onAddCurrentLogin,
-                onAddLogin: startNewLogin,
+                onAddLogin: performLoginAction,
                 onImport: onImport
             )
         }
@@ -41,7 +41,11 @@ struct EmptyAccountsView: View {
         .padding(KeyringStyle.Spacing.detailPagePadding)
     }
 
-    private func startNewLogin() {
+    private func performLoginAction() {
+        if presentation.addLoginCancelsInProgress {
+            store.cancelLoginNewCodexAccount()
+            return
+        }
         guard presentation.canAddLogin else { return }
         store.loginNewCodexAccount()
     }

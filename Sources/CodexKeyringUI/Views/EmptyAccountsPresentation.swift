@@ -2,7 +2,9 @@ struct EmptyAccountsPresentation: Equatable {
     let showsSaveCurrentLogin: Bool
     let canSaveCurrentLogin: Bool
     let canAddLogin: Bool
+    let addLoginTitle: String
     let addLoginSystemImage: String
+    let addLoginCancelsInProgress: Bool
     let usesProminentAddLoginButton: Bool
     let canImport: Bool
 
@@ -15,8 +17,10 @@ struct EmptyAccountsPresentation: Equatable {
     ) {
         self.showsSaveCurrentLogin = canSaveCurrentAuth
         self.canSaveCurrentLogin = canAddCurrentLogin
-        self.canAddLogin = canLoginNewAccount
-        self.addLoginSystemImage = isLoginInProgress ? "hourglass" : "person.badge.plus"
+        self.canAddLogin = isLoginInProgress || canLoginNewAccount
+        self.addLoginTitle = isLoginInProgress ? "Cancel Login" : "Add Login"
+        self.addLoginSystemImage = isLoginInProgress ? "xmark.circle" : "person.badge.plus"
+        self.addLoginCancelsInProgress = isLoginInProgress
         self.usesProminentAddLoginButton = !canSaveCurrentAuth
         self.canImport = canImportAccount
     }

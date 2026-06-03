@@ -20,11 +20,15 @@ final class BlockingLoginService: CodexLoginServicing, @unchecked Sendable {
     func loginWithChatGPT(
         openAuthURL: @escaping @Sendable (URL) async throws -> Void
     ) async throws {
-        try await withCheckedThrowingContinuation { continuation in
-            lock.withLock {
-                _startedCount += 1
-                self.continuation = continuation
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.withLock {
+                    _startedCount += 1
+                    self.continuation = continuation
+                }
             }
+        } onCancel: {
+            fail(with: CancellationError())
         }
     }
 

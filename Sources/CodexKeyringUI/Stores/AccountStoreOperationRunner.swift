@@ -2,17 +2,18 @@ import Foundation
 import CodexKeyringDomain
 
 extension AccountStore {
+    @discardableResult
     func run(
         clearErrorOnStart: Bool = true,
         reportErrorOnFailure: Bool = true,
         _ operation: @escaping @MainActor @Sendable () async throws -> Void,
         onFailure: (@MainActor @Sendable (Error) -> Void)? = nil
-    ) {
+    ) -> Task<Void, Never> {
         if clearErrorOnStart {
             lastError = nil
         }
         beginQueuedOperation()
-        operationQueue.enqueue {
+        return operationQueue.enqueue {
             defer { self.finishQueuedOperation() }
             try await operation()
         } onFailure: { [weak self] error in

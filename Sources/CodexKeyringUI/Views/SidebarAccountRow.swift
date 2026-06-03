@@ -40,11 +40,14 @@ struct SidebarAccountRow: View {
             Text(presentation.subtitle)
                 .foregroundStyle(presentation.secondaryTextTint.color)
                 .truncationMode(.middle)
+                .layoutPriority(0)
             if let quota = presentation.quotaSummary {
                 Text("-")
                     .foregroundStyle(presentation.secondaryTextTint.color)
                 Text(quota)
                     .foregroundStyle(presentation.quotaTextTint.color)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
             }
         }
         .font(.caption)

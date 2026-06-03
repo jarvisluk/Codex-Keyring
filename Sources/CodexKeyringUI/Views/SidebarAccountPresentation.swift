@@ -4,6 +4,7 @@ struct SidebarAccountPresentation: Equatable {
     let title: String
     let subtitle: String
     let quotaSummary: String?
+    let quotaAccessibilitySummary: String?
     let accessibilitySummary: String
     let statusSystemImage: String
     let statusIconTint: SidebarAccountTint
@@ -19,7 +20,8 @@ struct SidebarAccountPresentation: Equatable {
     ) {
         self.title = account.displayName
         self.subtitle = account.displayEmail
-        self.quotaSummary = quotaState?.sidebarSummary
+        self.quotaSummary = quotaState?.compactSidebarSummary
+        self.quotaAccessibilitySummary = quotaState?.sidebarSummary
         self.statusSystemImage = isActive ? "checkmark.circle.fill" : "person.crop.circle"
         self.statusIconTint = Self.statusIconTint(isActive: isActive, isSelected: isSelected)
         self.titleTint = isSelected ? .selectedPrimary : .primary
@@ -30,8 +32,8 @@ struct SidebarAccountPresentation: Equatable {
         if isActive {
             accessibilityParts.append("active")
         }
-        if let quotaSummary {
-            accessibilityParts.append(quotaSummary)
+        if let quotaAccessibilitySummary {
+            accessibilityParts.append(quotaAccessibilitySummary)
         }
         self.accessibilitySummary = accessibilityParts.joined(separator: ", ")
     }

@@ -45,9 +45,9 @@ final class MenuBarPresentationTests: XCTestCase {
         let inactive = AppMenuBarPresentation(activeAccount: nil)
         let active = AppMenuBarPresentation(activeAccount: makePresentationAccount(alias: "Work"))
 
-        XCTAssertEqual(inactive.systemImage, "person.crop.circle.badge.questionmark")
+        XCTAssertFalse(inactive.isActive)
         XCTAssertEqual(inactive.statusLabel, "Codex Keyring: no active saved account")
-        XCTAssertEqual(active.systemImage, "person.crop.circle.badge.checkmark")
+        XCTAssertTrue(active.isActive)
         XCTAssertEqual(active.statusLabel, "Codex Keyring: Work active")
     }
 }

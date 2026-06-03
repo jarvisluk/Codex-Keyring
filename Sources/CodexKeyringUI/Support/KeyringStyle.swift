@@ -2,6 +2,7 @@ import SwiftUI
 
 enum KeyringStyle {
     enum Icon {
+        static let menuBarSize: CGFloat = 18
         static let rowWidth: CGFloat = 18
         static let statusSize: CGFloat = 14
         static let toolbarSize: CGFloat = 16

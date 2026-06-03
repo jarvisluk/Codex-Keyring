@@ -47,7 +47,7 @@ struct CodexKeyringApp: App {
                 .environmentObject(settingsPresentation)
         } label: {
             let presentation = AppMenuBarPresentation(activeAccount: store.activeAccount)
-            Image(systemName: presentation.systemImage)
+            AppMenuBarIconView(isActive: presentation.isActive)
                 .accessibilityLabel(presentation.statusLabel)
                 .help(presentation.statusLabel)
         }

@@ -52,6 +52,7 @@ The script builds the SwiftPM target, stages a project-local app bundle at
 Useful modes:
 
 ```bash
+./script/build_and_run.sh --stage-only --release
 ./script/build_and_run.sh --verify
 ./script/build_and_run.sh --verify --release
 ./script/build_and_run.sh --logs
@@ -105,6 +106,28 @@ errors, then smoke-tests the staged release app bundle under the same warning
 policy.
 
 The Codex app Run action is wired in `.codex/environments/environment.toml`.
+
+## Release Packages
+
+Build a local release zip with:
+
+```bash
+APP_VERSION=0.1.0 APP_BUILD=1 ./script/package_release.sh
+```
+
+This stages `dist/Codex Keyring.app`, signs it ad hoc by default, writes
+`dist/release/CodexKeyring-<version>-macOS.zip`, and generates a matching
+`.sha256` file plus short release notes. Add `--app-smoke` to launch and verify
+the staged release app before zipping it.
+
+GitHub Actions release builds live in `.github/workflows/release.yml`.
+Pushing a `v*` tag builds the release package, uploads it as a workflow
+artifact, and creates or updates the matching GitHub Release. Manual runs
+require a version input and can optionally create a GitHub Release.
+
+The default package is not notarized. To distribute outside local testing,
+configure Developer ID signing and notarization before publishing to users;
+otherwise macOS Gatekeeper may warn on first launch.
 
 ## Safe Basic Workflow
 

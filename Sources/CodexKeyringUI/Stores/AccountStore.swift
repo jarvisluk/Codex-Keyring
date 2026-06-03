@@ -30,6 +30,8 @@ public final class AccountStore: ObservableObject {
     let quotaRefreshScheduler = AccountQuotaRefreshScheduler()
     var liveAuthSyncCoalescer = AccountLiveAuthSyncCoalescer()
     var queuedOperationCount = 0
+    var loginOperationTask: Task<Void, Never>?
+    var loginCancellationRequested = false
 
     public init(
         repository: any AccountRepository,
@@ -72,6 +74,7 @@ public final class AccountStore: ObservableObject {
     }
 
     deinit {
+        loginOperationTask?.cancel()
         liveAuthWatcher.stop()
     }
 }

@@ -36,9 +36,12 @@ struct EmptyAccountsActions: View {
         let button = Button {
             onAddLogin()
         } label: {
-            Label("Add Login", systemImage: presentation.addLoginSystemImage)
+            Label(presentation.addLoginTitle, systemImage: presentation.addLoginSystemImage)
         }
         .disabled(!presentation.canAddLogin)
+        .help(presentation.addLoginCancelsInProgress
+            ? "Cancel the current Codex browser login."
+            : "Open Codex login and save the new account without switching the current auth.")
 
         if presentation.usesProminentAddLoginButton {
             button.buttonStyle(.borderedProminent)

@@ -21,7 +21,8 @@ final class SidebarAccountPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.title, "Work")
         XCTAssertEqual(presentation.subtitle, "person@example.com")
-        XCTAssertEqual(presentation.quotaSummary, "5h 75% left")
+        XCTAssertEqual(presentation.quotaSummary, "5h 75%")
+        XCTAssertEqual(presentation.quotaAccessibilitySummary, "5h 75% left")
         XCTAssertEqual(presentation.statusSystemImage, "checkmark.circle.fill")
         XCTAssertEqual(presentation.statusIconTint, .active)
         XCTAssertEqual(presentation.titleTint, .primary)

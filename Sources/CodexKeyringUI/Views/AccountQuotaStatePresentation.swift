@@ -1,6 +1,14 @@
 import CodexKeyringDomain
 
 extension AccountQuotaState {
+    var compactSidebarSummary: String? {
+        if phase == .loading { return "quota refreshing" }
+        guard let bucket = snapshot?.primaryBucket else {
+            return fallbackSummary
+        }
+        return bucket.compactSidebarLimitSummary ?? fallbackSummary
+    }
+
     var sidebarSummary: String? {
         if phase == .loading { return "quota refreshing" }
         guard let bucket = snapshot?.primaryBucket else {

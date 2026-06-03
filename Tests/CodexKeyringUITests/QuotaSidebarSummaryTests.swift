@@ -6,6 +6,7 @@ final class QuotaSidebarSummaryTests: XCTestCase {
         let state = makeAvailableQuotaState(planType: "business")
 
         XCTAssertEqual(state.sidebarSummary, "5h unlimited · week unlimited")
+        XCTAssertEqual(state.compactSidebarSummary, "unlimited")
     }
 
     func testSidebarSummaryShowsFiveHourAndWeeklyWindows() {
@@ -17,5 +18,6 @@ final class QuotaSidebarSummaryTests: XCTestCase {
         )
 
         XCTAssertEqual(state.sidebarSummary, "5h 97% left · week 88% left")
+        XCTAssertEqual(state.compactSidebarSummary, "5h 97% · week 88%")
     }
 }

@@ -29,21 +29,24 @@ extension FileSystemManifestRepository {
 
     static func normalized(_ manifest: AccountManifest) -> (
         AccountManifest,
-        repairedActiveAccountID: Bool
+        repairedActiveAccountID: Bool,
+        migratedSettingsDefaults: Bool
     ) {
         var normalized = manifest
         normalized.accounts.sort(by: accountSortPrecedes)
+        let settingsMigration = normalized.settings.migratedToCurrentDefaults()
+        normalized.settings = settingsMigration.settings
 
         guard let activeID = normalized.activeAccountID else {
-            return (normalized, false)
+            return (normalized, false, settingsMigration.didMigrate)
         }
         let hasActiveAccount = normalized.accounts.contains { $0.id == activeID }
         if hasActiveAccount {
-            return (normalized, false)
+            return (normalized, false, settingsMigration.didMigrate)
         }
 
         normalized.activeAccountID = nil
-        return (normalized, true)
+        return (normalized, true, settingsMigration.didMigrate)
     }
 
     static func accountSortPrecedes(_ lhs: CodexAccount, _ rhs: CodexAccount) -> Bool {

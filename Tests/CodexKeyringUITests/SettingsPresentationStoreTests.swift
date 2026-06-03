@@ -3,7 +3,7 @@ import XCTest
 
 final class SettingsPresentationStoreTests: XCTestCase {
     @MainActor
-    func testSettingsPresentationStoreTogglesModalState() {
+    func testSettingsPresentationStoreTracksNativeWindowVisibility() {
         let store = SettingsPresentationStore()
 
         XCTAssertFalse(store.isPresented)

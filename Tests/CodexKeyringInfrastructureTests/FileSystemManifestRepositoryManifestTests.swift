@@ -73,6 +73,46 @@ final class FileSystemManifestRepositoryManifestTests: FileSystemManifestReposit
         XCTAssertEqual(try filePermissions(at: accountsDirectory), 0o700)
     }
 
+    func testLoadMigratesLegacySettingsToDefaultRestartOn() async throws {
+        let repository = makeRepository()
+        try FileManager.default.createDirectory(at: appDirectory, withIntermediateDirectories: true)
+        try Data("""
+        {
+          "accounts": [],
+          "activeAccountID": null,
+          "settings": {
+            "restartCodexAppAfterSwitch": false,
+            "launchAtLogin": false,
+            "allowNetworkQuotaAPIs": false
+          }
+        }
+        """.utf8).write(to: manifestURL)
+
+        let loaded = try await repository.load()
+        let repaired = try readRawManifest()
+
+        XCTAssertTrue(loaded.settings.restartCodexAppAfterSwitch)
+        XCTAssertEqual(loaded.settings.defaultsVersion, AppSettings.currentDefaultsVersion)
+        XCTAssertTrue(repaired.settings.restartCodexAppAfterSwitch)
+        XCTAssertEqual(repaired.settings.defaultsVersion, AppSettings.currentDefaultsVersion)
+    }
+
+    func testLoadKeepsCurrentSettingsRestartOff() async throws {
+        let repository = makeRepository()
+        try writeRawManifest(
+            AccountManifest(
+                accounts: [],
+                activeAccountID: nil,
+                settings: AppSettings(restartCodexAppAfterSwitch: false)
+            )
+        )
+
+        let loaded = try await repository.load()
+
+        XCTAssertFalse(loaded.settings.restartCodexAppAfterSwitch)
+        XCTAssertEqual(loaded.settings.defaultsVersion, AppSettings.currentDefaultsVersion)
+    }
+
     func testLoadRepairsStaleActiveAccountIDAndPersistsRepair() async throws {
         let repository = makeRepository()
         let account = account(alias: "alpha")

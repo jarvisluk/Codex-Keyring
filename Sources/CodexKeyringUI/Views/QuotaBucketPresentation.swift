@@ -1,6 +1,18 @@
 import CodexKeyringDomain
 
 extension QuotaBucket {
+    var compactSidebarLimitSummary: String? {
+        if isUnlimited {
+            return "unlimited"
+        }
+
+        let parts = windows
+            .sortedForMenuSummary()
+            .prefix(2)
+            .map { "\($0.compactDurationLabel) \($0.formattedRemaining)" }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     var compactLimitSummary: String? {
         if isUnlimited {
             return "5h unlimited · week unlimited"

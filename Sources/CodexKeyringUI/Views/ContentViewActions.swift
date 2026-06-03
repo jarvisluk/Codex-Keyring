@@ -8,6 +8,10 @@ extension ContentView {
         store.loginNewCodexAccount()
     }
 
+    func cancelNewLogin() {
+        store.cancelLoginNewCodexAccount()
+    }
+
     func showAddCurrentLoginSheet() {
         guard store.canAddCurrentLogin else { return }
         showingAddCurrentSheet = true

@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 public final class SettingsPresentationStore: ObservableObject {
-    @Published public var isPresented = false
+    @Published public private(set) var isPresented = false
 
     public init() {}
 

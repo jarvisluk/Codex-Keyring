@@ -17,14 +17,13 @@ public struct ContentView: View {
             } detail: {
                 detailContent
             }
-                .disabled(settingsPresentation.isPresented)
+            .disabled(settingsPresentation.isPresented)
 
             if settingsPresentation.isPresented {
-                SettingsModalOverlay {
-                    settingsPresentation.dismiss()
-                }
-                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                .zIndex(1)
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
             }
         }
         .background(MainWindowChromeConfigurator())
@@ -48,7 +47,6 @@ public struct ContentView: View {
             showAddCurrentLoginSheet: showAddCurrentLoginSheet,
             importAuthFile: importAuthFile
         )
-        .animation(.easeInOut(duration: 0.16), value: settingsPresentation.isPresented)
     }
 }
 

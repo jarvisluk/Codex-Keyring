@@ -1,8 +1,10 @@
 import Foundation
 
 public struct AppSettings: Codable, Equatable, Sendable {
+    public static let currentDefaultsVersion = 2
     public static let quotaRefreshIntervalOptions = [5, 15, 30]
 
+    public var defaultsVersion: Int
     public var restartCodexAppAfterSwitch: Bool
     public var launchAtLogin: Bool
     public var allowNetworkQuotaAPIs: Bool
@@ -16,12 +18,14 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var preserveAgentPreferencesPerAccount: Bool
 
     public init(
+        defaultsVersion: Int = Self.currentDefaultsVersion,
         restartCodexAppAfterSwitch: Bool = true,
         launchAtLogin: Bool = false,
         allowNetworkQuotaAPIs: Bool = false,
         quotaRefreshIntervalMinutes: Int = 15,
         preserveAgentPreferencesPerAccount: Bool = true
     ) {
+        self.defaultsVersion = defaultsVersion
         self.restartCodexAppAfterSwitch = restartCodexAppAfterSwitch
         self.launchAtLogin = launchAtLogin
         self.allowNetworkQuotaAPIs = allowNetworkQuotaAPIs
@@ -30,6 +34,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
+        case defaultsVersion
         case restartCodexAppAfterSwitch
         case launchAtLogin
         case allowNetworkQuotaAPIs
@@ -39,6 +44,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.defaultsVersion = try container.decodeIfPresent(Int.self, forKey: .defaultsVersion) ?? 0
         // Default to true so a plain "Switch" always restarts Codex App; legacy
         // manifests that omit the key inherit the new default.
         self.restartCodexAppAfterSwitch = try container.decodeIfPresent(
@@ -60,5 +66,16 @@ public struct AppSettings: Codable, Equatable, Sendable {
 
     public static func normalizedQuotaRefreshInterval(_ minutes: Int) -> Int {
         quotaRefreshIntervalOptions.contains(minutes) ? minutes : 15
+    }
+
+    public func migratedToCurrentDefaults() -> (settings: AppSettings, didMigrate: Bool) {
+        guard defaultsVersion < Self.currentDefaultsVersion else {
+            return (self, false)
+        }
+
+        var migrated = self
+        migrated.defaultsVersion = Self.currentDefaultsVersion
+        migrated.restartCodexAppAfterSwitch = true
+        return (migrated, true)
     }
 }

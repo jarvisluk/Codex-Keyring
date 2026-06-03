@@ -14,7 +14,9 @@ final class EmptyAccountsPresentationTests: XCTestCase {
         XCTAssertTrue(presentation.showsSaveCurrentLogin)
         XCTAssertFalse(presentation.canSaveCurrentLogin)
         XCTAssertFalse(presentation.usesProminentAddLoginButton)
+        XCTAssertEqual(presentation.addLoginTitle, "Add Login")
         XCTAssertEqual(presentation.addLoginSystemImage, "person.badge.plus")
+        XCTAssertFalse(presentation.addLoginCancelsInProgress)
         XCTAssertTrue(presentation.canAddLogin)
         XCTAssertTrue(presentation.canImport)
     }
@@ -30,8 +32,10 @@ final class EmptyAccountsPresentationTests: XCTestCase {
 
         XCTAssertFalse(presentation.showsSaveCurrentLogin)
         XCTAssertTrue(presentation.usesProminentAddLoginButton)
-        XCTAssertEqual(presentation.addLoginSystemImage, "hourglass")
-        XCTAssertFalse(presentation.canAddLogin)
+        XCTAssertEqual(presentation.addLoginTitle, "Cancel Login")
+        XCTAssertEqual(presentation.addLoginSystemImage, "xmark.circle")
+        XCTAssertTrue(presentation.addLoginCancelsInProgress)
+        XCTAssertTrue(presentation.canAddLogin)
         XCTAssertFalse(presentation.canImport)
     }
 }

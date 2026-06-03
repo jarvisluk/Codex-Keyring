@@ -4,7 +4,6 @@ import CodexKeyringUI
 @main
 struct CodexKeyringApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @Environment(\.openWindow) private var openWindow
     @StateObject private var store: AccountStore
     @StateObject private var settingsPresentation: SettingsPresentationStore
 
@@ -20,31 +19,20 @@ struct CodexKeyringApp: App {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(settingsPresentation)
-                .frame(minWidth: 920, minHeight: 600)
+                .frame(minWidth: 760, minHeight: 500)
         }
         .defaultSize(width: 1040, height: 680)
         .windowResizability(.contentMinSize)
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings...") {
-                    presentSettings()
-                }
-                .keyboardShortcut(",", modifiers: [.command])
-            }
 
-            CommandGroup(after: .appInfo) {
-                Button("Refresh Accounts") {
-                    store.refresh()
-                }
-                .keyboardShortcut("r", modifiers: [.command])
-                .disabled(store.isRefreshInProgress || settingsPresentation.isPresented)
-            }
+        Settings {
+            SettingsView()
+                .environmentObject(store)
+                .environmentObject(settingsPresentation)
         }
 
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(store)
-                .environmentObject(settingsPresentation)
         } label: {
             let presentation = AppMenuBarPresentation(activeAccount: store.activeAccount)
             AppMenuBarIconView(isActive: presentation.isActive)
@@ -52,11 +40,5 @@ struct CodexKeyringApp: App {
                 .help(presentation.statusLabel)
         }
         .menuBarExtraStyle(.menu)
-    }
-
-    @MainActor
-    private func presentSettings() {
-        MainWindowPresenter.open(using: openWindow)
-        settingsPresentation.present()
     }
 }

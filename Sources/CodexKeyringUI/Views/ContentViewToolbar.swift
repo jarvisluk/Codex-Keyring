@@ -3,6 +3,7 @@ import SwiftUI
 extension ContentView {
     var toolbarPresentation: ContentToolbarPresentation {
         ContentToolbarPresentation(
+            isSettingsPresented: settingsPresentation.isPresented,
             isLoginInProgress: store.isLoginInProgress,
             isRefreshInProgress: store.isRefreshInProgress,
             canLoginNewAccount: store.canLoginNewAccount,

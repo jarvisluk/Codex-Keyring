@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct SettingsView: View {
     @EnvironmentObject private var store: AccountStore
+    @EnvironmentObject private var settingsPresentation: SettingsPresentationStore
 
     public init() {}
 
@@ -22,5 +23,11 @@ public struct SettingsView: View {
             height: KeyringStyle.Layout.settingsWindowHeight
         )
         .accountStoreFailureAlert(store)
+        .onAppear {
+            settingsPresentation.present()
+        }
+        .onDisappear {
+            settingsPresentation.dismiss()
+        }
     }
 }

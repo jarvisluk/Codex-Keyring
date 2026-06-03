@@ -4,6 +4,7 @@ import XCTest
 final class ContentToolbarPresentationTests: XCTestCase {
     func testContentToolbarPresentationEnablesIdleActions() {
         let presentation = ContentToolbarPresentation(
+            isSettingsPresented: false,
             isLoginInProgress: false,
             isRefreshInProgress: false,
             canLoginNewAccount: true,
@@ -20,8 +21,28 @@ final class ContentToolbarPresentationTests: XCTestCase {
         XCTAssertFalse(presentation.isRefreshLoading)
     }
 
+    func testContentToolbarPresentationDisablesActionsBehindSettingsWindow() {
+        let presentation = ContentToolbarPresentation(
+            isSettingsPresented: true,
+            isLoginInProgress: false,
+            isRefreshInProgress: false,
+            canLoginNewAccount: true,
+            canImportAccount: true,
+            canRefreshAccounts: true
+        )
+
+        XCTAssertEqual(presentation.addLoginTitle, "Add Login")
+        XCTAssertEqual(presentation.addLoginSystemImage, "plus.circle")
+        XCTAssertFalse(presentation.addLoginCancelsInProgress)
+        XCTAssertFalse(presentation.canAddLogin)
+        XCTAssertFalse(presentation.canImport)
+        XCTAssertFalse(presentation.canRefresh)
+        XCTAssertFalse(presentation.isRefreshLoading)
+    }
+
     func testContentToolbarPresentationTurnsLoginActionIntoCancel() {
         let presentation = ContentToolbarPresentation(
+            isSettingsPresented: false,
             isLoginInProgress: true,
             isRefreshInProgress: true,
             canLoginNewAccount: false,

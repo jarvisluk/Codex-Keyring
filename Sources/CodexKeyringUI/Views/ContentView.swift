@@ -3,17 +3,28 @@ import SwiftUI
 public struct ContentView: View {
     public init() {}
     @EnvironmentObject var store: AccountStore
+    @EnvironmentObject var settingsPresentation: SettingsPresentationStore
     @SceneStorage("selectedAccountID") var selectedAccountIDString: String?
     @State var showingAddCurrentSheet = false
 
     public var body: some View {
-        NavigationSplitView {
-            SidebarView(
-                selection: selectedAccountID,
-                onAddCurrentLogin: showAddCurrentLoginSheet
-            )
-        } detail: {
-            detailContent
+        ZStack {
+            NavigationSplitView {
+                SidebarView(
+                    selection: selectedAccountID,
+                    onAddCurrentLogin: showAddCurrentLoginSheet
+                )
+            } detail: {
+                detailContent
+            }
+            .disabled(settingsPresentation.isPresented)
+
+            if settingsPresentation.isPresented {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            }
         }
         .background(MainWindowChromeConfigurator())
         .toolbar { accountToolbar }

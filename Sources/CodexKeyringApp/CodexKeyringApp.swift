@@ -6,16 +6,20 @@ struct CodexKeyringApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.openSettings) private var openSettings
     @StateObject private var store: AccountStore
+    @StateObject private var settingsPresentation: SettingsPresentationStore
 
     init() {
         let store = AccountStoreFactory.makeStore()
+        let settingsPresentation = SettingsPresentationStore()
         _store = StateObject(wrappedValue: store)
+        _settingsPresentation = StateObject(wrappedValue: settingsPresentation)
     }
 
     var body: some Scene {
         Window(MainWindowPresenter.windowTitle, id: MainWindowPresenter.windowID) {
             ContentView()
                 .environmentObject(store)
+                .environmentObject(settingsPresentation)
                 .frame(minWidth: 760, minHeight: 500)
         }
         .defaultSize(width: 1040, height: 680)
@@ -33,13 +37,14 @@ struct CodexKeyringApp: App {
                     store.refresh()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
-                .disabled(store.isRefreshInProgress)
+                .disabled(store.isRefreshInProgress || settingsPresentation.isPresented)
             }
         }
 
         Settings {
             SettingsView()
                 .environmentObject(store)
+                .environmentObject(settingsPresentation)
         }
 
         MenuBarExtra {

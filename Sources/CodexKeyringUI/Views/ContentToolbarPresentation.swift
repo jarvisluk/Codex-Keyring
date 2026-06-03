@@ -8,6 +8,7 @@ struct ContentToolbarPresentation: Equatable {
     let isRefreshLoading: Bool
 
     init(
+        isSettingsPresented: Bool,
         isLoginInProgress: Bool,
         isRefreshInProgress: Bool,
         canLoginNewAccount: Bool,
@@ -17,9 +18,9 @@ struct ContentToolbarPresentation: Equatable {
         addLoginTitle = isLoginInProgress ? "Cancel Login" : "Add Login"
         addLoginSystemImage = isLoginInProgress ? "xmark.circle" : "plus.circle"
         addLoginCancelsInProgress = isLoginInProgress
-        canAddLogin = isLoginInProgress || canLoginNewAccount
-        canImport = canImportAccount
-        canRefresh = canRefreshAccounts
+        canAddLogin = !isSettingsPresented && (isLoginInProgress || canLoginNewAccount)
+        canImport = !isSettingsPresented && canImportAccount
+        canRefresh = !isSettingsPresented && canRefreshAccounts
         isRefreshLoading = isRefreshInProgress
     }
 }

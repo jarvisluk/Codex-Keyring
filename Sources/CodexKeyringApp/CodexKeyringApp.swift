@@ -4,22 +4,18 @@ import CodexKeyringUI
 @main
 struct CodexKeyringApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
     @StateObject private var store: AccountStore
-    @StateObject private var settingsPresentation: SettingsPresentationStore
 
     init() {
         let store = AccountStoreFactory.makeStore()
-        let settingsPresentation = SettingsPresentationStore()
         _store = StateObject(wrappedValue: store)
-        _settingsPresentation = StateObject(wrappedValue: settingsPresentation)
     }
 
     var body: some Scene {
         Window(MainWindowPresenter.windowTitle, id: MainWindowPresenter.windowID) {
             ContentView()
                 .environmentObject(store)
-                .environmentObject(settingsPresentation)
                 .frame(minWidth: 920, minHeight: 600)
         }
         .defaultSize(width: 1040, height: 680)
@@ -27,7 +23,7 @@ struct CodexKeyringApp: App {
         .commands {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") {
-                    presentSettings()
+                    openSettings()
                 }
                 .keyboardShortcut(",", modifiers: [.command])
             }
@@ -37,14 +33,18 @@ struct CodexKeyringApp: App {
                     store.refresh()
                 }
                 .keyboardShortcut("r", modifiers: [.command])
-                .disabled(store.isRefreshInProgress || settingsPresentation.isPresented)
+                .disabled(store.isRefreshInProgress)
             }
+        }
+
+        Settings {
+            SettingsView()
+                .environmentObject(store)
         }
 
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(store)
-                .environmentObject(settingsPresentation)
         } label: {
             let presentation = AppMenuBarPresentation(activeAccount: store.activeAccount)
             AppMenuBarIconView(isActive: presentation.isActive)
@@ -52,11 +52,5 @@ struct CodexKeyringApp: App {
                 .help(presentation.statusLabel)
         }
         .menuBarExtraStyle(.menu)
-    }
-
-    @MainActor
-    private func presentSettings() {
-        MainWindowPresenter.open(using: openWindow)
-        settingsPresentation.present()
     }
 }

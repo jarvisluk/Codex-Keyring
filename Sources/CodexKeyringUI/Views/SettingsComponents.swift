@@ -1,30 +1,5 @@
 import SwiftUI
 
-struct SettingsModalHeader: View {
-    let onDismiss: () -> Void
-
-    var body: some View {
-        HStack(spacing: KeyringStyle.Spacing.section) {
-            Text("Settings")
-                .font(.headline)
-
-            Spacer()
-
-            Button {
-                onDismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .symbolRenderingMode(.monochrome)
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut(.cancelAction)
-            .help("Close Settings")
-        }
-        .padding(.horizontal, KeyringStyle.Spacing.cardPadding)
-        .padding(.vertical, KeyringStyle.Spacing.section)
-    }
-}
-
 struct SettingsSection<Content: View>: View {
     let title: String
     let content: Content

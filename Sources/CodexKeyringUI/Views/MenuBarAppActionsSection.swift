@@ -2,13 +2,11 @@ import AppKit
 import SwiftUI
 
 struct MenuBarAppActionsSection: View {
-    @Environment(\.openWindow) private var openWindow
-    @EnvironmentObject private var settingsPresentation: SettingsPresentationStore
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Button("Settings") {
-            MenuBarWindowActions.openManager(using: openWindow)
-            settingsPresentation.present()
+            openSettings()
         }
 
         Button("Quit") {

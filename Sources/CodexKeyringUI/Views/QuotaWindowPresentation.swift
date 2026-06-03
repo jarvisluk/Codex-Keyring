@@ -62,18 +62,6 @@ extension QuotaWindow {
         }
     }
 
-    var compactSidebarDurationLabel: String {
-        guard let minutes = windowDurationMinutes else { return "lim" }
-        switch minutes {
-        case 5 * 60:
-            return "5h"
-        case 7 * 24 * 60:
-            return "wk"
-        default:
-            return compactDurationLabel
-        }
-    }
-
     var formattedReset: String {
         formattedReset(now: Date())
     }

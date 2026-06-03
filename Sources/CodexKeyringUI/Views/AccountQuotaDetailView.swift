@@ -39,5 +39,6 @@ struct AccountQuotaDetailView: View {
             }
         }
         .keyringSurface(.regular)
+        .frame(maxWidth: KeyringStyle.Layout.quotaDetailMaxWidth, alignment: .leading)
     }
 }

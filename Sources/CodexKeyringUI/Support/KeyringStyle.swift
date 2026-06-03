@@ -42,6 +42,7 @@ enum KeyringStyle {
 
     enum Layout {
         static let detailContentMaxWidth: CGFloat = 760
+        static let quotaDetailMaxWidth: CGFloat = 560
         static let settingsLocationLabelWidth: CGFloat = 104
         static let settingsQuotaLabelWidth: CGFloat = 148
         static let settingsQuotaPickerWidth: CGFloat = 150

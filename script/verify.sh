@@ -59,7 +59,7 @@ check_untracked_text_clean() {
   local file
   while IFS= read -r -d '' file; do
     case "$file" in
-      *.swift|*.sh|*.md|*.toml|*.json|Package.swift) ;;
+      *.swift|*.sh|*.md|*.toml|*.json|*.yml|*.yaml|Package.swift) ;;
       *) continue ;;
     esac
 
@@ -76,7 +76,7 @@ check_untracked_text_clean() {
         failed=1
       fi
     done < "$file"
-  done < <(git -C "$ROOT_DIR" ls-files --others --exclude-standard -z -- Sources Tests script Package.swift README.md ROADMAP.md)
+  done < <(git -C "$ROOT_DIR" ls-files --others --exclude-standard -z -- .github Sources Tests script Package.swift README.md ROADMAP.md)
 
   return "$failed"
 }
@@ -99,6 +99,7 @@ if ((RUN_RELEASE_BUILD)); then
 fi
 
 run_step bash -n "$ROOT_DIR/script/build_and_run.sh"
+run_step bash -n "$ROOT_DIR/script/package_release.sh"
 run_step bash -n "$ROOT_DIR/script/verify.sh"
 run_step git -C "$ROOT_DIR" diff --check
 run_step check_untracked_text_clean

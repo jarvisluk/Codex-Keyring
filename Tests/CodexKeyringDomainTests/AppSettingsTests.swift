@@ -30,6 +30,7 @@ final class AppSettingsTests: XCTestCase {
     func testAppSettingsDefaultsRestartCodexAppOn() {
         let defaults = AppSettings()
         XCTAssertTrue(defaults.restartCodexAppAfterSwitch)
+        XCTAssertEqual(defaults.defaultsVersion, AppSettings.currentDefaultsVersion)
     }
 
     func testAppSettingsDefaultsPreserveAgentPreferencesOn() {
@@ -59,6 +60,7 @@ final class AppSettingsTests: XCTestCase {
     func testAppSettingsDecodesMissingRestartAsTrue() throws {
         let decoded = try decodeSettings("{}")
         XCTAssertTrue(decoded.restartCodexAppAfterSwitch)
+        XCTAssertEqual(decoded.defaultsVersion, 0)
     }
 
     func testAppSettingsRespectsExplicitRestartFalse() throws {
@@ -68,5 +70,28 @@ final class AppSettingsTests: XCTestCase {
         }
         """)
         XCTAssertFalse(decoded.restartCodexAppAfterSwitch)
+    }
+
+    func testAppSettingsMigratesLegacyDefaultsToRestartOn() throws {
+        let legacy = try decodeSettings("""
+        {
+          "restartCodexAppAfterSwitch": false
+        }
+        """)
+
+        let migration = legacy.migratedToCurrentDefaults()
+
+        XCTAssertTrue(migration.didMigrate)
+        XCTAssertTrue(migration.settings.restartCodexAppAfterSwitch)
+        XCTAssertEqual(migration.settings.defaultsVersion, AppSettings.currentDefaultsVersion)
+    }
+
+    func testAppSettingsKeepsExplicitCurrentRestartOff() {
+        let current = AppSettings(restartCodexAppAfterSwitch: false)
+
+        let migration = current.migratedToCurrentDefaults()
+
+        XCTAssertFalse(migration.didMigrate)
+        XCTAssertFalse(migration.settings.restartCodexAppAfterSwitch)
     }
 }

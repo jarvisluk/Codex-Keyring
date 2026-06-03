@@ -13,8 +13,8 @@ extension FileSystemManifestRepository {
             let data = try self.readManifestData()
             do {
                 let manifest = try Self.decoder.decode(AccountManifest.self, from: data)
-                let (normalized, repairedActiveAccountID) = Self.normalized(manifest)
-                if repairedActiveAccountID {
+                let (normalized, repairedActiveAccountID, migratedSettingsDefaults) = Self.normalized(manifest)
+                if repairedActiveAccountID || migratedSettingsDefaults {
                     self.persistRepairedManifestIfPossible(normalized)
                 }
                 return normalized
@@ -31,7 +31,7 @@ extension FileSystemManifestRepository {
         try await performIO {
             try self.ensureDirectories()
             do {
-                let (normalized, _) = Self.normalized(manifest)
+                let (normalized, _, _) = Self.normalized(manifest)
                 try self.writeManifest(normalized)
                 self.log.debug("manifest saved (\(manifest.accounts.count) accounts)")
             } catch {
@@ -57,7 +57,7 @@ extension FileSystemManifestRepository {
     func persistRepairedManifestIfPossible(_ manifest: AccountManifest) {
         do {
             try writeManifest(manifest)
-            log.info("cleared stale active account id from manifest")
+            log.info("persisted repaired manifest")
         } catch {
             log.warning("failed to persist repaired manifest: \(String(describing: error))")
         }

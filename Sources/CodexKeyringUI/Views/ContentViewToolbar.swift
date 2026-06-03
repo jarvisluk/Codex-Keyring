@@ -46,6 +46,7 @@ extension ContentView {
                 )
             }
             .disabled(!toolbarPresentation.canRefresh)
+            .keyboardShortcut("r", modifiers: [.command])
             .help("Refresh accounts")
         }
     }

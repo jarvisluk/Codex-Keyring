@@ -4,7 +4,6 @@ import CodexKeyringUI
 @main
 struct CodexKeyringApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @Environment(\.openSettings) private var openSettings
     @StateObject private var store: AccountStore
     @StateObject private var settingsPresentation: SettingsPresentationStore
 
@@ -24,22 +23,6 @@ struct CodexKeyringApp: App {
         }
         .defaultSize(width: 1040, height: 680)
         .windowResizability(.contentMinSize)
-        .commands {
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings...") {
-                    openSettings()
-                }
-                .keyboardShortcut(",", modifiers: [.command])
-            }
-
-            CommandGroup(after: .appInfo) {
-                Button("Refresh Accounts") {
-                    store.refresh()
-                }
-                .keyboardShortcut("r", modifiers: [.command])
-                .disabled(store.isRefreshInProgress || settingsPresentation.isPresented)
-            }
-        }
 
         Settings {
             SettingsView()

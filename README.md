@@ -1,144 +1,71 @@
-# Codex Keyring
+# Codex Keyring User Guide
 
-A personal macOS account switcher for Codex. It is a native desktop app with a
-manager window, a persistent menu bar item, and local-only account snapshots.
+Codex Keyring is a macOS menu bar app for managing multiple Codex accounts.
+It lets you save accounts, switch between them quickly, check usage limits, and
+keep account-specific Codex preferences organized.
 
-## What It Does
+Use it when you want to:
 
-- Opens a Codex ChatGPT login flow from the add button and saves the resulting
-  auth snapshot locally without switching the active `~/.codex/auth.json`.
-- Saves the current `~/.codex/auth.json` as a named local account snapshot.
-- Imports another Codex `auth.json` snapshot from disk.
-- Lists, renames, removes, and switches saved accounts.
-- Replaces `~/.codex/auth.json` only when you explicitly switch accounts.
-- Creates a backup before each switch under:
-  `~/Library/Application Support/CodexKeyring/Backups`.
-- Shows only metadata such as email, plan, auth mode, and a short fingerprint.
-- Keeps saved snapshots under:
-  `~/Library/Application Support/CodexKeyring/Accounts`.
-- Writes auth snapshots, backups, and login staging copies with owner-only
-  `0600` file permissions.
-- Offers a menu bar item for quick switching and background use.
-- Can restart Codex App after switching so the desktop app reloads auth
-  immediately. This is enabled by default and can be changed in Settings.
-- Includes Launch at Login support through macOS ServiceManagement.
-- Optionally checks ChatGPT/Codex account quota for saved OAuth accounts and
-  refreshes rotated OAuth tokens back into their local snapshots. Network quota
-  checks are opt-in from Settings.
-- Keeps each saved snapshot in lock-step with `~/.codex/auth.json` so the
-  rotating OAuth refresh token never goes stale: whenever Codex App rewrites
-  the live auth file, the app captures the new bytes back into the matching
-  saved snapshot (and refuses to switch away from an account without first
-  re-snapshotting its rotated token).
-- Remembers per-account Codex agent settings (model, reasoning effort,
-  approval/sandbox mode, Full Access / Auto Review, and the "skip
-  full-access confirm" toggle) and restores them on the next switch.
-  Enabled by default; toggle off from Settings → "Remember per-account
-  agent settings". Automatic restore requires "Restart Codex App after
-  switching accounts" so the rewrite of `~/.codex/config.toml` and
-  `~/.codex/.codex-global-state.json` happens while Codex App is stopped.
-  Unrelated keys in those files (project trust levels, `[features]`,
-  workspace history, window bounds, etc.) are preserved byte-for-byte.
+- Switch between work and personal Codex accounts.
+- Save a new login without switching to it immediately.
+- Change accounts from the menu bar.
+- See usage limits at a glance.
+- Keep each account's model and permission preferences separate.
 
-## Build And Run
+## First Use
 
-```bash
-./script/build_and_run.sh
-```
+1. Open Codex Keyring.
+2. Click the plus button to add a new Codex login.
+3. Finish signing in through the browser.
+4. Return to Codex Keyring and give the account a clear name.
+5. Add more accounts, or save the Codex account you are already using.
 
-The script builds the SwiftPM target, stages a project-local app bundle at
-`dist/Codex Keyring.app`, and launches it.
+Adding an account only saves it in Codex Keyring. Your active Codex account
+changes only when you choose to switch.
 
-Useful modes:
+## Add Accounts
 
-```bash
-./script/build_and_run.sh --stage-only --release
-./script/build_and_run.sh --verify
-./script/build_and_run.sh --verify --release
-./script/build_and_run.sh --logs
-./script/build_and_run.sh --telemetry
-```
+**Add a new browser login**
 
-`--verify` waits up to 10 seconds for the staged app process and main manager
-window to appear, then quits the smoke-tested app. Override the timeout with
-`VERIFY_TIMEOUT_SECONDS=20 ./script/build_and_run.sh --verify` when testing on a
-slower machine, or keep the app open for manual inspection with
-`VERIFY_KEEP_APP=1 ./script/build_and_run.sh --verify`. Add `--release` when
-you want the staged app bundle to use the optimized SwiftPM build. Set
-`SWIFT_WARNINGS_AS_ERRORS=1` when you want local run builds to match the stricter
-verification compiler settings.
+Use the plus button or `Add New Login`. Codex Keyring opens the browser, waits
+for you to sign in, and then adds the account to your list.
 
-## Validate Changes
+**Save the current login**
 
-```bash
-./script/verify.sh
-```
+If Codex is already signed in, use `Save Current Login` to add that account to
+Codex Keyring.
 
-This runs the standard local checks: `swift test` with Swift warnings promoted
-to errors, shell syntax validation for the scripts, `git diff --check`, and
-whitespace/conflict-marker checks for untracked source, test, script, and
-documentation files.
+**Import an existing login**
 
-After package graph, enum, or model shape changes, or if SwiftPM/xctest reports
-an unexpected signal from stale incremental build state, clear build artifacts
-before verifying:
+Use the import button when you already have login data from another setup.
+Imported accounts are saved but not activated until you switch to them.
 
-```bash
-./script/verify.sh --clean
-```
+## Switch Accounts
 
-For a full smoke test that also builds, launches, and verifies the staged app
-bundle, run:
+Select an account in the main window and click `Switch`. You can also switch
+directly from the menu bar.
 
-```bash
-./script/verify.sh --app
-```
+The active account is marked in green. By default, Codex Keyring restarts Codex
+App after switching so the new account takes effect immediately.
 
-Before release-oriented changes, also compile the optimized SwiftPM build:
+## Check Usage Limits
 
-```bash
-./script/verify.sh --release
-```
+Click `Refresh Quotas` to update usage limits. The menu bar also shows compact
+usage information for quick checks.
 
-Options compose, so `./script/verify.sh --clean --release --app` is the broadest
-local gate. It compiles tests and release builds with Swift warnings promoted to
-errors, then smoke-tests the staged release app bundle under the same warning
-policy.
+If usage details are missing, open `Settings` and enable usage-limit checks.
+Some account types may show unlimited, unavailable, or temporarily unreadable
+usage information.
 
-The Codex app Run action is wired in `.codex/environments/environment.toml`.
+## Settings
 
-## Release Packages
-
-Build a local release zip with:
-
-```bash
-APP_VERSION=0.1.0 APP_BUILD=1 ./script/package_release.sh
-```
-
-This stages `dist/Codex Keyring.app`, signs it ad hoc by default, writes
-`dist/release/CodexKeyring-<version>-macOS.zip`, and generates a matching
-`.sha256` file plus short release notes. Add `--app-smoke` to launch and verify
-the staged release app before zipping it.
-
-GitHub Actions release builds live in `.github/workflows/release.yml`.
-Pushing a `v*` tag builds the release package, uploads it as a workflow
-artifact, and creates or updates the matching GitHub Release. Manual runs
-require a version input and can optionally create a GitHub Release.
-
-The default package is not notarized. To distribute outside local testing,
-configure Developer ID signing and notarization before publishing to users;
-otherwise macOS Gatekeeper may warn on first launch.
-
-## Safe Basic Workflow
-
-1. Use the toolbar or Accounts menu to add a new Codex ChatGPT login.
-2. Complete login in the browser. The new auth snapshot is saved under this
-   app's Application Support folder, while the current Codex auth is restored.
-3. Use Save Current Login for the live `~/.codex/auth.json`, or import an
-   existing auth snapshot from the toolbar or Accounts menu. Imported snapshots
-   are saved inactive until you explicitly switch to them.
-4. Switch accounts from the manager window or menu bar. By default the switch
-   also restarts Codex App so it reloads the new auth state.
+- `Restart Codex App after switching accounts`: recommended. This helps Codex
+  App pick up the selected account immediately.
+- `Launch at Login`: starts Codex Keyring when you sign in to macOS.
+- `Remember per-account agent settings`: keeps model, reasoning, and permission
+  preferences separate for each saved account.
+- Usage refresh interval: controls how often Codex Keyring refreshes usage
+  information.
 
 ## Keyboard Shortcuts
 
@@ -147,24 +74,47 @@ otherwise macOS Gatekeeper may warn on first launch.
 | `Cmd-0` | Open Manager |
 | `Cmd-N` | Add New Login |
 | `Cmd-S` | Save Current Login |
-| `Cmd-Shift-I` | Import Auth Snapshot |
+| `Cmd-Shift-I` | Import Login |
 | `Cmd-R` | Refresh Accounts |
 | `Cmd-Shift-R` | Refresh Quotas |
 
+## Privacy And Safety
+
+Codex Keyring stores account information locally on your Mac. It does not sync
+your account list to a cloud service.
+
+Deleting a saved account removes it from Codex Keyring only. It does not delete
+your OpenAI or Codex account.
+
+Usage-limit checks are optional. If they are turned off, Codex Keyring does not
+refresh usage information in the background.
+
+## Troubleshooting
+
+**Why did my active Codex account not change after adding a login?**
+
+Adding a login only saves it. Choose `Switch` when you want to make it active.
+
+**Why does Codex App restart after switching?**
+
+Restarting helps Codex App use the newly selected account right away. You can
+turn this off in `Settings`, but you may need to restart Codex App manually.
+
+**Does removing a saved account delete the real account?**
+
+No. It only removes the saved entry from Codex Keyring.
+
+**Why is usage information missing for an account?**
+
+Usage checks may be disabled, the account type may not expose usage details, or
+the information may be temporarily unavailable. Try refreshing again later.
+
 ## Uninstall
 
-Quit the app, then remove the app bundle and its local support data:
+Quit Codex Keyring and delete the app.
 
-```bash
-rm -rf "dist/Codex Keyring.app"
-rm -rf "$HOME/Library/Application Support/CodexKeyring"
-```
+To remove saved Codex Keyring data as well, open `Settings`, reveal the data
+location, and delete the saved data from your Mac.
 
-If you copied the bundle into `/Applications`, remove that copy too:
-
-```bash
-rm -rf "/Applications/Codex Keyring.app"
-```
-
-This does not remove `~/.codex/auth.json`; the current Codex login is preserved
-unless you explicitly delete it yourself.
+Uninstalling Codex Keyring does not remove the Codex account you are currently
+using.

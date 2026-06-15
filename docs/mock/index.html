@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Keyring Demo Mock</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050505;
+      --window: #1f1f20;
+      --sidebar: #292929;
+      --surface: #202526;
+      --surface-strong: #151b1b;
+      --card: #252526;
+      --line: rgba(255, 255, 255, 0.12);
+      --text: #f1f3f5;
+      --muted: #a8adb3;
+      --dim: #74787e;
+      --green: #00d855;
+      --blue: #0a84ff;
+      --red: #ff4547;
+      --button: #3d3d3f;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0b0b0c;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      display: grid;
+      gap: 56px;
+      justify-items: center;
+      padding: 48px;
+    }
+
+    .page-note {
+      width: min(920px, 100%);
+      color: #c8cdd2;
+      line-height: 1.55;
+      text-align: center;
+    }
+
+    .page-note h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .page-note p {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .capture-stack {
+      display: grid;
+      gap: 48px;
+      justify-items: center;
+    }
+
+    .main-window-shot {
+      width: 1888px;
+      height: 1332px;
+      background: var(--bg);
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .mock-window {
+      position: relative;
+      width: 1752px;
+      height: 1196px;
+      overflow: hidden;
+      background: var(--window);
+      border: 2px solid rgba(255, 255, 255, 0.22);
+      border-radius: 58px;
+      box-shadow: var(--shadow);
+    }
+
+    .window-controls {
+      position: absolute;
+      top: 36px;
+      left: 38px;
+      display: flex;
+      gap: 18px;
+      z-index: 3;
+    }
+
+    .traffic {
+      width: 29px;
+      height: 29px;
+      border-radius: 50%;
+    }
+
+    .traffic.red { background: #ff453a; }
+    .traffic.yellow { background: #ffd60a; }
+    .traffic.green { background: #30d158; }
+
+    .toolbar-divider {
+      position: absolute;
+      top: 94px;
+      left: 452px;
+      right: 0;
+      height: 1px;
+      background: var(--line);
+    }
+
+    .sidebar {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 452px;
+      background: var(--sidebar);
+      border-right: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 114px 30px 26px;
+    }
+
+    .sidebar-title {
+      margin: 0 0 16px 8px;
+      color: #8b8f94;
+      font-size: 25px;
+      font-weight: 700;
+    }
+
+    .account-row {
+      position: relative;
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 18px;
+      align-items: start;
+      padding: 18px 18px;
+      min-height: 92px;
+      border-radius: 16px;
+      color: var(--text);
+    }
+
+    .account-row.active {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .account-row.active::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 16px;
+      bottom: 16px;
+      width: 5px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+
+    .status-dot,
+    .person-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      margin-top: 4px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #223128;
+      background: #f2f2f2;
+    }
+
+    .person-dot {
+      color: #bfc3c7;
+      background: transparent;
+      border: 3px solid #bfc3c7;
+      font-size: 0;
+    }
+
+    .person-dot::after {
+      content: "";
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #bfc3c7;
+      box-shadow: 0 12px 0 4px #bfc3c7;
+      transform: translateY(-5px);
+    }
+
+    .row-title {
+      font-size: 25px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .row-subtitle,
+    .row-note {
+      margin-top: 4px;
+      color: #c2c6ca;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .row-quota {
+      margin-top: 10px;
+      color: var(--green);
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .current-auth {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      min-height: 192px;
+      padding: 20px 30px 24px;
+      background: rgba(255, 255, 255, 0.04);
+      border-top-left-radius: 22px;
+      border-top-right-radius: 22px;
+    }
+
+    .current-auth h2 {
+      margin: 0 0 12px 46px;
+      color: #b8bdc2;
+      font-size: 21px;
+      font-weight: 700;
+    }
+
+    .current-card {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 16px;
+      align-items: center;
+      background: var(--surface);
+      border-radius: 15px;
+      padding: 17px 18px;
+    }
+
+    .current-card .status-dot {
+      width: 27px;
+      height: 27px;
+      font-size: 17px;
+      background: var(--green);
+    }
+
+    .content {
+      position: absolute;
+      inset: 94px 0 0 452px;
+      padding: 58px 52px;
+    }
+
+    .toolbar {
+      position: absolute;
+      left: 486px;
+      top: 26px;
+      height: 62px;
+      min-width: 212px;
+      padding: 0 18px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 28px;
+      color: #e8eaed;
+      font-size: 34px;
+    }
+
+    .toolbar-icon {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      line-height: 1;
+    }
+
+    .layout-icon {
+      position: absolute;
+      top: 40px;
+      left: 390px;
+      width: 34px;
+      height: 30px;
+      border: 3px solid #d6d9dc;
+      border-radius: 6px;
+      opacity: 0.9;
+      z-index: 3;
+    }
+
+    .layout-icon::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 11px;
+      width: 2px;
+      background: #d6d9dc;
+    }
+
+    .hero-card {
+      width: 690px;
+      min-height: 142px;
+      border-radius: 18px;
+      background: var(--surface);
+      padding: 28px 34px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .hero-card h2 {
+      margin: 0;
+      font-size: 32px;
+      font-weight: 700;
+    }
+
+    .hero-card p {
+      margin: 12px 0 0;
+      color: #b8bdc2;
+      font-size: 24px;
+    }
+
+    .active-pill {
+      margin-top: 4px;
+      padding: 5px 22px 6px;
+      border-radius: 999px;
+      color: #132614;
+      background: var(--green);
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .actions {
+      display: flex;
+      gap: 16px;
+      margin: 10px 0 0 0;
+    }
+
+    .action-btn {
+      min-height: 48px;
+      padding: 0 24px;
+      border-radius: 10px;
+      background: var(--button);
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 25px;
+      font-weight: 700;
+      color: #e9ecef;
+    }
+
+    .action-btn.primary {
+      background: var(--blue);
+    }
+
+    .action-btn.danger {
+      color: var(--red);
+      background: rgba(85, 45, 46, 0.42);
+    }
+
+    .quota-panel {
+      margin-top: 38px;
+      width: 1120px;
+      min-height: 318px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 34px;
+    }
+
+    .panel-heading {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-size: 26px;
+      font-weight: 800;
+      margin-bottom: 14px;
+    }
+
+    .refresh-button {
+      float: right;
+      margin-top: -12px;
+      min-height: 50px;
+      padding: 0 24px;
+      border-radius: 10px;
+      background: #4d4d4f;
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      color: #eceff1;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .quota-card {
+      clear: both;
+      min-height: 210px;
+      border-radius: 16px;
+      background: var(--surface-strong);
+      padding: 28px 32px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 24px;
+    }
+
+    .quota-title {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      color: var(--green);
+      font-size: 28px;
+      font-weight: 800;
+      margin-bottom: 18px;
+    }
+
+    .green-check {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      background: var(--green);
+      color: #102819;
+      font-size: 20px;
+      font-weight: 900;
+    }
+
+    .quota-line {
+      color: #b5bac0;
+      font-size: 22px;
+      line-height: 1.8;
+    }
+
+    .ready {
+      color: var(--green);
+      font-size: 23px;
+      font-weight: 800;
+      padding-top: 2px;
+    }
+
+    .metadata-panel {
+      margin-top: 40px;
+      width: 810px;
+      border-radius: 18px;
+      background: rgba(32, 37, 38, 0.94);
+      padding: 34px 34px 32px;
+      display: grid;
+      grid-template-columns: 190px 1fr;
+      row-gap: 22px;
+      column-gap: 24px;
+      font-size: 23px;
+    }
+
+    .metadata-panel .label {
+      color: #a8adb3;
+      font-weight: 700;
+    }
+
+    .metadata-panel .value {
+      color: #f0f2f4;
+      font-weight: 650;
+    }
+
+    .menu-shot {
+      width: 390px;
+      height: 496px;
+      background: rgba(35, 35, 36, 0.96);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 18px 32px 22px;
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    .menu-item {
+      min-height: 47px;
+      display: flex;
+      align-items: center;
+      font-size: 26px;
+      font-weight: 720;
+      color: #d2d5d8;
+    }
+
+    .menu-item.disabled {
+      color: rgba(210, 213, 216, 0.22);
+    }
+
+    .separator {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.12);
+      margin: 6px 0 12px;
+    }
+
+    .menu-account {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 7px 0 9px;
+    }
+
+    .menu-account .mark {
+      width: 22px;
+      height: 22px;
+      margin-top: 11px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #2b2f30;
+      background: #bfc3c7;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    .menu-account .mark.empty {
+      background: transparent;
+      border: 3px solid #bfc3c7;
+    }
+
+    .menu-account-title {
+      min-height: 36px;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.07);
+      color: #f2f4f6;
+      font-size: 27px;
+      line-height: 1;
+    }
+
+    .menu-account-quota {
+      margin: 9px 0 0 10px;
+      color: #28b850;
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1.25;
+      white-space: nowrap;
+    }
+
+    .menu-bottom {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+    }
+  </style>
+</head>
+<body>
+  <section class="page-note">
+    <h1>Codex Keyring documentation mock</h1>
+    <p>This page uses fictional data and exists only to generate README images.</p>
+  </section>
+
+  <main class="capture-stack">
+    <section class="main-window-shot" data-shot="main-window" aria-label="Codex Keyring main window mock">
+      <div class="mock-window">
+        <div class="window-controls" aria-hidden="true">
+          <span class="traffic red"></span>
+          <span class="traffic yellow"></span>
+          <span class="traffic green"></span>
+        </div>
+        <div class="layout-icon" aria-hidden="true"></div>
+        <div class="toolbar" aria-hidden="true">
+          <span class="toolbar-icon">⊕</span>
+          <span class="toolbar-icon">⇩</span>
+          <span class="toolbar-icon">↻</span>
+        </div>
+        <div class="toolbar-divider"></div>
+
+        <aside class="sidebar">
+          <h2 class="sidebar-title">Accounts</h2>
+          <div class="account-row active">
+            <span class="status-dot">✓</span>
+            <div>
+              <div class="row-title">Work account</div>
+              <div class="row-subtitle">work@example.com</div>
+              <div class="row-quota">5h unlimited · week unlimited</div>
+              <div class="row-note">Active in Codex</div>
+            </div>
+          </div>
+          <div class="account-row">
+            <span class="person-dot"></span>
+            <div>
+              <div class="row-title">Personal</div>
+              <div class="row-subtitle">personal@example.com</div>
+              <div class="row-quota">monthly 95% left</div>
+            </div>
+          </div>
+          <div class="current-auth">
+            <h2>Current Codex Auth</h2>
+            <div class="current-card">
+              <span class="status-dot">✓</span>
+              <div>
+                <div class="row-title">Work account</div>
+                <div class="row-note">Active in Codex App</div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <section class="content">
+          <div class="hero-card">
+            <div>
+              <h2>Work account</h2>
+              <p>work@example.com</p>
+            </div>
+            <span class="active-pill">Active</span>
+          </div>
+
+          <div class="actions">
+            <span class="action-btn primary">↻ Switch Again</span>
+            <span class="action-btn">↙ Rename</span>
+            <span class="action-btn danger">⌫ Remove</span>
+          </div>
+
+          <section class="quota-panel">
+            <span class="refresh-button">↻ Refresh Quotas</span>
+            <div class="panel-heading">◉ Quota</div>
+            <div class="quota-card">
+              <div>
+                <div class="quota-title"><span class="green-check">✓</span> codex</div>
+                <div class="quota-line">Plan: Business</div>
+                <div class="quota-line">∞ &nbsp; Quota: unlimited</div>
+                <div class="quota-line">Last checked just now</div>
+              </div>
+              <div class="ready">Ready</div>
+            </div>
+          </section>
+
+          <section class="metadata-panel">
+            <div class="label">Auth mode</div><div class="value">chatgpt</div>
+            <div class="label">Plan</div><div class="value">business</div>
+            <div class="label">Account ID</div><div class="value">demo-account-id</div>
+            <div class="label">Fingerprint</div><div class="value">demo-fingerprint</div>
+            <div class="label">Saved</div><div class="value">Today at 10:00</div>
+            <div class="label">Updated</div><div class="value">Just now</div>
+          </section>
+        </section>
+      </div>
+    </section>
+
+    <section class="menu-shot" data-shot="menu-bar" aria-label="Codex Keyring menu bar mock">
+      <div class="menu-item">Open Manager</div>
+      <div class="menu-item disabled">Add Current Login</div>
+      <div class="menu-item">Refresh Quotas</div>
+      <div class="separator"></div>
+
+      <div class="menu-account">
+        <span class="mark">✓</span>
+        <div>
+          <div class="menu-account-title">Work account</div>
+          <div class="menu-account-quota">5h unlimited · week unlimited</div>
+        </div>
+      </div>
+
+      <div class="menu-account">
+        <span class="mark empty"></span>
+        <div>
+          <div class="menu-account-title">Personal</div>
+          <div class="menu-account-quota">monthly 95% left</div>
+        </div>
+      </div>
+
+      <div class="menu-bottom">
+        <div class="menu-item">Settings</div>
+        <div class="menu-item">Quit</div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

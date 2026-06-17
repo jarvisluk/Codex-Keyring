@@ -2,6 +2,7 @@
 set -euo pipefail
 
 APP_NAME="CodexKeyring"
+CLI_NAME="ckr"
 BUNDLE_NAME="Codex Keyring"
 BUNDLE_ID="com.junrong.CodexKeyring"
 MIN_SYSTEM_VERSION="14.0"
@@ -17,6 +18,7 @@ APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
+CLI_BINARY="$APP_RESOURCES/$CLI_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.icns"
 APP_ICON_NAME="AppIcon"
@@ -86,16 +88,20 @@ stop_app() {
 }
 
 swift build ${swift_build_args[@]+"${swift_build_args[@]}"}
-BUILD_BINARY="$(swift build ${swift_build_args[@]+"${swift_build_args[@]}"} --show-bin-path)/$APP_NAME"
+BUILD_BIN_DIR="$(swift build ${swift_build_args[@]+"${swift_build_args[@]}"} --show-bin-path)"
+BUILD_BINARY="$BUILD_BIN_DIR/$APP_NAME"
+BUILD_CLI_BINARY="$BUILD_BIN_DIR/$CLI_NAME"
 
 stop_app
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
+cp "$BUILD_CLI_BINARY" "$CLI_BINARY"
 cp "$APP_ICON_SOURCE" "$APP_RESOURCES/$APP_ICON_NAME.icns"
 cp "$MENU_BAR_ICON_SOURCE" "$APP_RESOURCES/MenuBarIcon.svg"
 chmod +x "$APP_BINARY"
+chmod +x "$CLI_BINARY"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

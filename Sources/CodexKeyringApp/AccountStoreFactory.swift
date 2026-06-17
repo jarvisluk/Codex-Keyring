@@ -52,6 +52,7 @@ enum AccountStoreFactory {
             },
             logService: CodexKeyringLog.makeAppLogger(.store),
             liveAuthWatcher: LiveAuthFileWatcher(),
+            operationLock: FileSystemCodexKeyringOperationLock(),
             startupError: startupError
         )
     }

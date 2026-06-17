@@ -13,6 +13,8 @@ public struct SettingsView: View {
                 Divider()
                 SettingsLocationsSection()
                 Divider()
+                SettingsCommandLineSection()
+                Divider()
                 SettingsLogsSection()
             }
             .padding(.horizontal, KeyringStyle.Spacing.settingsHorizontalPadding)

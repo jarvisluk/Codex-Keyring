@@ -24,6 +24,7 @@ public final class AccountStore: ObservableObject {
     let openAuthURL: @Sendable (URL) async throws -> Void
     let logService: (any AppLogService)?
     let liveAuthWatcher: any LiveAuthWatching
+    let operationLock: any CodexKeyringOperationLocking
     let operationQueue = AccountStoreOperationQueue()
 
     let useCases: AccountStoreUseCases
@@ -46,6 +47,7 @@ public final class AccountStore: ObservableObject {
         openAuthURL: @escaping @Sendable (URL) async throws -> Void,
         logService: (any AppLogService)? = nil,
         liveAuthWatcher: any LiveAuthWatching = NoopLiveAuthWatcher(),
+        operationLock: any CodexKeyringOperationLocking = NoopCodexKeyringOperationLock(),
         startupError: Error? = nil
     ) {
         self.installer = installer
@@ -54,6 +56,7 @@ public final class AccountStore: ObservableObject {
         self.openAuthURL = openAuthURL
         self.logService = logService
         self.liveAuthWatcher = liveAuthWatcher
+        self.operationLock = operationLock
         self.isLaunchAtLoginSupported = launchAtLoginController.isSupported
         self.useCases = AccountStoreUseCases(
             repository: repository,

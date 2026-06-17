@@ -15,7 +15,9 @@ extension AccountStore {
         beginQueuedOperation()
         return operationQueue.enqueue {
             defer { self.finishQueuedOperation() }
-            try await operation()
+            try await self.operationLock.withLock {
+                try await operation()
+            }
         } onFailure: { [weak self] error in
             onFailure?(error)
             if reportErrorOnFailure {

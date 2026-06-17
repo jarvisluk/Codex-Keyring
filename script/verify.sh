@@ -76,7 +76,7 @@ check_untracked_text_clean() {
         failed=1
       fi
     done < "$file"
-  done < <(git -C "$ROOT_DIR" ls-files --others --exclude-standard -z -- .github Sources Tests script Package.swift README.md ROADMAP.md)
+  done < <(git -C "$ROOT_DIR" ls-files --others --exclude-standard -z -- .github .githooks Sources Tests script Package.swift README.md ROADMAP.md)
 
   return "$failed"
 }
@@ -100,7 +100,9 @@ fi
 
 run_step bash -n "$ROOT_DIR/script/build_and_run.sh"
 run_step bash -n "$ROOT_DIR/script/package_release.sh"
+run_step bash -n "$ROOT_DIR/script/validate_commit_message.sh"
 run_step bash -n "$ROOT_DIR/script/verify.sh"
+run_step sh -n "$ROOT_DIR/.githooks/commit-msg"
 run_step git -C "$ROOT_DIR" diff --check
 run_step check_untracked_text_clean
 

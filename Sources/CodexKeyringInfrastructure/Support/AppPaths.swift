@@ -52,4 +52,8 @@ public enum AppPaths {
     public static var currentLogFile: URL {
         logsDirectory.appendingPathComponent(logFileName)
     }
+
+    public static var operationLockFile: URL {
+        applicationSupportDirectory.appendingPathComponent("codex-keyring.lock")
+    }
 }

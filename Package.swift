@@ -10,6 +10,14 @@ let package = Package(
         .executable(
             name: "CodexKeyring",
             targets: ["CodexKeyringApp"]
+        ),
+        .executable(
+            name: "ckr",
+            targets: ["CodexKeyringCLIExecutable"]
+        ),
+        .executable(
+            name: "codex-keyring",
+            targets: ["CodexKeyringCLIExecutable"]
         )
     ],
     targets: [
@@ -17,6 +25,19 @@ let package = Package(
             name: "CodexKeyringApp",
             dependencies: [
                 "CodexKeyringUI",
+                "CodexKeyringInfrastructure"
+            ]
+        ),
+        .executableTarget(
+            name: "CodexKeyringCLIExecutable",
+            dependencies: [
+                "CodexKeyringCLI"
+            ]
+        ),
+        .target(
+            name: "CodexKeyringCLI",
+            dependencies: [
+                "CodexKeyringDomain",
                 "CodexKeyringInfrastructure"
             ]
         ),
@@ -42,6 +63,10 @@ let package = Package(
         .testTarget(
             name: "CodexKeyringInfrastructureTests",
             dependencies: ["CodexKeyringInfrastructure"]
+        ),
+        .testTarget(
+            name: "CodexKeyringCLITests",
+            dependencies: ["CodexKeyringCLI"]
         ),
         .testTarget(
             name: "CodexKeyringUITests",

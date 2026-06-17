@@ -78,6 +78,30 @@ usage information.
 | `Cmd-R` | Refresh Accounts |
 | `Cmd-Shift-R` | Refresh Quotas |
 
+## Command Line
+
+Codex Keyring also ships a `ckr` command for scripted account checks and
+explicit account operations.
+
+```bash
+ckr list
+ckr status
+ckr save-current --alias work
+ckr import /path/to/auth.json --alias personal
+ckr switch work --restart
+ckr settings set allowNetworkQuotaAPIs true
+ckr quota refresh
+```
+
+Use `--json` with read commands and mutation commands when another tool needs
+machine-readable output. Account selectors accept UUIDs, UUID prefixes, exact
+aliases, exact emails, account identifiers, and fingerprint prefixes. If a
+selector matches multiple accounts, the command fails instead of guessing.
+
+The CLI never prints raw `auth.json` contents, refresh tokens, or snapshot file
+names. Destructive saved-account removal requires `--yes`. The longer
+`codex-keyring` command remains available as a compatibility alias.
+
 ## Privacy And Safety
 
 Codex Keyring stores account information locally on your Mac. It does not sync

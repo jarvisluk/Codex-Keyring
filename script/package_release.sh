@@ -11,6 +11,9 @@ SIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
 AD_HOC_SIGN="${AD_HOC_SIGN:-1}"
 VERSION="${APP_VERSION:-}"
 BUILD_NUMBER="${APP_BUILD:-}"
+SPARKLE_REQUIRED="${SPARKLE_REQUIRED:-0}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-}"
+SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 
 usage() {
   cat <<USAGE
@@ -32,6 +35,9 @@ Environment:
   APP_BUILD=1                 same as --build
   CODESIGN_IDENTITY=<name>    sign with a Developer ID/Application identity
   AD_HOC_SIGN=0               skip default ad hoc signing
+  SPARKLE_FEED_URL=<url>       appcast URL to embed for automatic updates
+  SPARKLE_PUBLIC_ED_KEY=<key>  public EdDSA key to embed for update checks
+  SPARKLE_REQUIRED=1           fail when Sparkle release settings are missing
 USAGE
 }
 
@@ -112,6 +118,13 @@ if [[ ! "$BUILD_NUMBER" =~ ^[0-9]+([.][0-9]+){0,2}$ ]]; then
   exit 2
 fi
 
+if [[ "$SPARKLE_REQUIRED" == "1" || "$SPARKLE_REQUIRED" == "true" ]]; then
+  if [[ -z "$SPARKLE_FEED_URL" || -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    echo "SPARKLE_FEED_URL and SPARKLE_PUBLIC_ED_KEY are required for update-enabled releases." >&2
+    exit 2
+  fi
+fi
+
 rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
 
@@ -125,6 +138,8 @@ fi
 env \
   APP_VERSION="$VERSION" \
   APP_BUILD="$BUILD_NUMBER" \
+  SPARKLE_FEED_URL="$SPARKLE_FEED_URL" \
+  SPARKLE_PUBLIC_ED_KEY="$SPARKLE_PUBLIC_ED_KEY" \
   SWIFT_WARNINGS_AS_ERRORS=1 \
   "$ROOT_DIR/script/build_and_run.sh" "${build_args[@]}"
 
@@ -144,6 +159,7 @@ ZIP_NAME="$ARTIFACT_PREFIX-$VERSION-macOS.zip"
 ZIP_PATH="$RELEASE_DIR/$ZIP_NAME"
 CHECKSUM_PATH="$RELEASE_DIR/$ZIP_NAME.sha256"
 NOTES_PATH="$RELEASE_DIR/$ARTIFACT_PREFIX-$VERSION-release-notes.md"
+APPCAST_NOTES_PATH="$RELEASE_DIR/${ZIP_NAME%.zip}.md"
 
 /usr/bin/ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
 
@@ -161,6 +177,7 @@ NOTES_PATH="$RELEASE_DIR/$ARTIFACT_PREFIX-$VERSION-release-notes.md"
   printf 'Unless the workflow is configured with a Developer ID signing identity '
   printf 'and notarization steps, macOS Gatekeeper may warn before first launch.\n'
 } >"$NOTES_PATH"
+cp "$NOTES_PATH" "$APPCAST_NOTES_PATH"
 
 printf 'Release package written:\n'
 printf '  %s\n' "$ZIP_PATH"

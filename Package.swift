@@ -20,6 +20,9 @@ let package = Package(
             targets: ["CodexKeyringCLIExecutable"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.0")
+    ],
     targets: [
         .executableTarget(
             name: "CodexKeyringApp",
@@ -44,7 +47,8 @@ let package = Package(
         .target(
             name: "CodexKeyringUI",
             dependencies: [
-                "CodexKeyringDomain"
+                "CodexKeyringDomain",
+                .product(name: "Sparkle", package: "Sparkle")
             ]
         ),
         .target(

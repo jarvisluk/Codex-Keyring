@@ -46,9 +46,11 @@ jobs:
 
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="${GITHUB_REF_NAME#v}"
+            tag="$GITHUB_REF_NAME"
             create_release="true"
           else
             version="$INPUT_VERSION"
+            tag="v$version"
             create_release="$INPUT_CREATE_RELEASE"
           fi
 
@@ -58,6 +60,7 @@ jobs:
           fi
 
           echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
           echo "create_release=$create_release" >>"$GITHUB_OUTPUT"
           echo "run_app_smoke=$INPUT_RUN_APP_SMOKE" >>"$GITHUB_OUTPUT"
 
@@ -75,10 +78,21 @@ jobs:
           ./script/build_and_run.sh --verify --release
 
       - name: Package release
+        env:
+          SPARKLE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY || secrets.SPARKLE_PUBLIC_ED_KEY || '' }}
+          SPARKLE_REQUIRED: ${{ steps.meta.outputs.create_release }}
         run: |
           APP_VERSION="${{ steps.meta.outputs.version }}" \
           APP_BUILD="$GITHUB_RUN_NUMBER" \
           ./script/package_release.sh
+
+      - name: Generate Sparkle appcast
+        if: steps.meta.outputs.create_release == 'true'
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+          APPCAST_DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/
+        run: ./script/generate_appcast.sh
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
@@ -87,6 +101,8 @@ jobs:
           path: |
             dist/release/*.zip
             dist/release/*.sha256
+            dist/release/appcast.xml
+            dist/release/*.delta
             dist/release/*release-notes.md
 
       - name: Create GitHub Release
@@ -96,19 +112,22 @@ jobs:
           RELEASE_VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
 
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            tag="$GITHUB_REF_NAME"
-          else
-            tag="v$RELEASE_VERSION"
-          fi
+          tag="${{ steps.meta.outputs.tag }}"
 
           notes_file="dist/release/CodexKeyring-$RELEASE_VERSION-release-notes.md"
+          assets=(
+            dist/release/*.zip
+            dist/release/*.sha256
+            dist/release/appcast.xml
+            dist/release/*.delta
+          )
 
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/release/*.zip dist/release/*.sha256 --clobber
+            gh release upload "$tag" "${assets[@]}" --clobber
           else
-            gh release create "$tag" dist/release/*.zip dist/release/*.sha256 \
+            gh release create "$tag" "${assets[@]}" \
               --title "Codex Keyring $RELEASE_VERSION" \
               --notes-file "$notes_file" \
               --target "$GITHUB_SHA"

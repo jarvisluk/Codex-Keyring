@@ -102,6 +102,29 @@ The CLI never prints raw `auth.json` contents, refresh tokens, or snapshot file
 names. Destructive saved-account removal requires `--yes`. The longer
 `codex-keyring` command remains available as a compatibility alias.
 
+## Automatic Updates
+
+Release builds can use Sparkle to check GitHub Releases for new versions. The
+app reads its update feed from:
+
+`https://github.com/jarvisluk/Codex-Keyring/releases/latest/download/appcast.xml`
+
+In release builds, open `Settings` to check for updates manually or turn
+automatic update checks on and off.
+
+Before running the `Release` workflow with `create_release` enabled, or before
+pushing a `v*` tag, configure:
+
+- `SPARKLE_PUBLIC_ED_KEY`: repository variable or secret containing the public
+  EdDSA key from Sparkle's `generate_keys` tool.
+- `SPARKLE_PRIVATE_ED_KEY`: repository secret containing the exported private
+  EdDSA key used by `generate_appcast`.
+
+The workflow embeds the public key and feed URL into the app bundle, generates
+`appcast.xml`, signs the update archive metadata, and uploads the appcast with
+the zip asset. Local builds without these values omit Sparkle update
+configuration.
+
 ## Privacy And Safety
 
 Codex Keyring stores account information locally on your Mac. It does not sync

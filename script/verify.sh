@@ -99,6 +99,7 @@ if ((RUN_RELEASE_BUILD)); then
 fi
 
 run_step bash -n "$ROOT_DIR/script/build_and_run.sh"
+run_step bash -n "$ROOT_DIR/script/generate_appcast.sh"
 run_step bash -n "$ROOT_DIR/script/package_release.sh"
 run_step bash -n "$ROOT_DIR/script/validate_commit_message.sh"
 run_step bash -n "$ROOT_DIR/script/verify.sh"

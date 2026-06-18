@@ -6,12 +6,14 @@ struct CodexKeyringApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store: AccountStore
     @StateObject private var settingsPresentation: SettingsPresentationStore
+    @StateObject private var softwareUpdates: SoftwareUpdateController
 
     init() {
         let store = AccountStoreFactory.makeStore()
         let settingsPresentation = SettingsPresentationStore()
         _store = StateObject(wrappedValue: store)
         _settingsPresentation = StateObject(wrappedValue: settingsPresentation)
+        _softwareUpdates = StateObject(wrappedValue: SoftwareUpdateController())
     }
 
     var body: some Scene {
@@ -28,6 +30,7 @@ struct CodexKeyringApp: App {
             SettingsView()
                 .environmentObject(store)
                 .environmentObject(settingsPresentation)
+                .environmentObject(softwareUpdates)
         }
 
         MenuBarExtra {
@@ -40,5 +43,13 @@ struct CodexKeyringApp: App {
                 .help(presentation.statusLabel)
         }
         .menuBarExtraStyle(.menu)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates...") {
+                    softwareUpdates.checkForUpdates()
+                }
+                .disabled(!softwareUpdates.canCheckForUpdates)
+            }
+        }
     }
 }

@@ -7,7 +7,9 @@ struct SettingsUpdatesSection: View {
         SettingsUpdatesPresentation(
             isConfigured: softwareUpdates.isConfigured,
             canCheckForUpdates: softwareUpdates.canCheckForUpdates,
-            isAutomaticCheckEnabled: softwareUpdates.isAutomaticCheckEnabled
+            isAutomaticCheckEnabled: softwareUpdates.isAutomaticCheckEnabled,
+            canAutomaticallyDownloadUpdates: softwareUpdates.canAutomaticallyDownloadUpdates,
+            isAutomaticDownloadEnabled: softwareUpdates.isAutomaticDownloadEnabled
         )
     }
 
@@ -34,6 +36,12 @@ struct SettingsUpdatesSection: View {
                     set: { softwareUpdates.setAutomaticCheckEnabled($0) }
                 ))
                 .disabled(!presentation.canToggleAutomaticChecks)
+
+                Toggle("Automatically download and install updates", isOn: Binding(
+                    get: { softwareUpdates.isAutomaticDownloadEnabled },
+                    set: { softwareUpdates.setAutomaticDownloadEnabled($0) }
+                ))
+                .disabled(!presentation.canToggleAutomaticDownloads)
 
                 SettingsNote(presentation.note)
                     .padding(.leading, KeyringStyle.Spacing.settingsControlTextIndent)

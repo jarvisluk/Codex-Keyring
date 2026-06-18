@@ -109,8 +109,9 @@ app reads its update feed from:
 
 `https://github.com/jarvisluk/Codex-Keyring/releases/latest/download/appcast.xml`
 
-In release builds, open `Settings` to check for updates manually or turn
-automatic update checks on and off.
+In release builds, open `Settings` to check for updates manually, turn
+automatic update checks on and off, and decide whether checked updates may be
+downloaded and installed automatically.
 
 Before running the `Release` workflow with `create_release` enabled, or before
 pushing a `v*` tag, configure:
@@ -123,7 +124,9 @@ pushing a `v*` tag, configure:
 The workflow embeds the public key and feed URL into the app bundle, generates
 `appcast.xml`, signs the update archive metadata, and uploads the appcast with
 the zip asset. Local builds without these values omit Sparkle update
-configuration.
+configuration. Automatic checks are enabled by default in configured release
+builds; automatic downloading and installation stays off until the user enables
+it in Settings.
 
 ## Privacy And Safety
 

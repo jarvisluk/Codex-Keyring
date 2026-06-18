@@ -6,23 +6,29 @@ final class SettingsUpdatesPresentationTests: XCTestCase {
         let presentation = SettingsUpdatesPresentation(
             isConfigured: true,
             canCheckForUpdates: true,
-            isAutomaticCheckEnabled: true
+            isAutomaticCheckEnabled: true,
+            canAutomaticallyDownloadUpdates: true,
+            isAutomaticDownloadEnabled: false
         )
 
         XCTAssertTrue(presentation.canCheckForUpdates)
         XCTAssertTrue(presentation.canToggleAutomaticChecks)
-        XCTAssertTrue(presentation.note.contains("enabled"))
+        XCTAssertTrue(presentation.canToggleAutomaticDownloads)
+        XCTAssertTrue(presentation.note.contains("ask before installing"))
     }
 
     func testSettingsUpdatesPresentationDisablesControlsWhenUnconfigured() {
         let presentation = SettingsUpdatesPresentation(
             isConfigured: false,
             canCheckForUpdates: true,
-            isAutomaticCheckEnabled: false
+            isAutomaticCheckEnabled: false,
+            canAutomaticallyDownloadUpdates: true,
+            isAutomaticDownloadEnabled: true
         )
 
         XCTAssertFalse(presentation.canCheckForUpdates)
         XCTAssertFalse(presentation.canToggleAutomaticChecks)
+        XCTAssertFalse(presentation.canToggleAutomaticDownloads)
         XCTAssertTrue(presentation.note.contains("release builds"))
     }
 
@@ -30,11 +36,40 @@ final class SettingsUpdatesPresentationTests: XCTestCase {
         let presentation = SettingsUpdatesPresentation(
             isConfigured: true,
             canCheckForUpdates: false,
-            isAutomaticCheckEnabled: false
+            isAutomaticCheckEnabled: true,
+            canAutomaticallyDownloadUpdates: true,
+            isAutomaticDownloadEnabled: false
         )
 
         XCTAssertFalse(presentation.canCheckForUpdates)
         XCTAssertTrue(presentation.canToggleAutomaticChecks)
+        XCTAssertTrue(presentation.canToggleAutomaticDownloads)
+        XCTAssertTrue(presentation.note.contains("ask before installing"))
+    }
+
+    func testSettingsUpdatesPresentationDisablesAutomaticDownloadsWhenChecksAreOff() {
+        let presentation = SettingsUpdatesPresentation(
+            isConfigured: true,
+            canCheckForUpdates: true,
+            isAutomaticCheckEnabled: false,
+            canAutomaticallyDownloadUpdates: true,
+            isAutomaticDownloadEnabled: false
+        )
+
+        XCTAssertFalse(presentation.canToggleAutomaticDownloads)
         XCTAssertTrue(presentation.note.contains("off"))
+    }
+
+    func testSettingsUpdatesPresentationShowsAutomaticInstallState() {
+        let presentation = SettingsUpdatesPresentation(
+            isConfigured: true,
+            canCheckForUpdates: true,
+            isAutomaticCheckEnabled: true,
+            canAutomaticallyDownloadUpdates: true,
+            isAutomaticDownloadEnabled: true
+        )
+
+        XCTAssertTrue(presentation.canToggleAutomaticDownloads)
+        XCTAssertTrue(presentation.note.contains("Automatic updates are enabled"))
     }
 }

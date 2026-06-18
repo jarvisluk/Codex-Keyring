@@ -102,6 +102,13 @@ The CLI never prints raw `auth.json` contents, refresh tokens, or snapshot file
 names. Destructive saved-account removal requires `--yes`. The longer
 `codex-keyring` command remains available as a compatibility alias.
 
+## Release
+
+Release builds are produced by the GitHub Actions workflow in
+`.github/workflows/release.yml`. See `docs/release.md` for tag-based release
+publishing, manual release candidates, and Apple Developer ID notarization
+setup.
+
 ## Privacy And Safety
 
 Codex Keyring stores account information locally on your Mac. It does not sync

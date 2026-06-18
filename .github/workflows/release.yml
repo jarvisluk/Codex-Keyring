@@ -20,9 +20,22 @@ on:
         required: false
         default: false
         type: boolean
+      notarize:
+        description: "Use Apple Developer ID signing and notarization"
+        required: false
+        default: auto
+        type: choice
+        options:
+          - auto
+          - "true"
+          - "false"
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -33,6 +46,13 @@ jobs:
       INPUT_VERSION: ${{ github.event.inputs.version || '' }}
       INPUT_CREATE_RELEASE: ${{ github.event.inputs.create_release || 'false' }}
       INPUT_RUN_APP_SMOKE: ${{ github.event.inputs.run_app_smoke || 'false' }}
+      INPUT_NOTARIZE: ${{ github.event.inputs.notarize || 'auto' }}
+      CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+      APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
     steps:
       - name: Check out repository
@@ -57,9 +77,80 @@ jobs:
             exit 2
           fi
 
+          if [[ ! "$version" =~ ^[0-9]+([.][0-9]+){0,2}$ ]]; then
+            echo "::error::Release version must look like 0.1.0."
+            exit 2
+          fi
+
+          case "$INPUT_NOTARIZE" in
+            auto|true|false) ;;
+            *)
+              echo "::error::notarize must be auto, true, or false."
+              exit 2
+              ;;
+          esac
+
           echo "version=$version" >>"$GITHUB_OUTPUT"
           echo "create_release=$create_release" >>"$GITHUB_OUTPUT"
           echo "run_app_smoke=$INPUT_RUN_APP_SMOKE" >>"$GITHUB_OUTPUT"
+          echo "notarize=$INPUT_NOTARIZE" >>"$GITHUB_OUTPUT"
+
+      - name: Resolve signing mode
+        id: release_mode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          has_signing_identity=false
+          has_notary_credentials=false
+          signing_enabled=false
+          notarize_enabled=false
+
+          if [[ -n "$APPLE_CERTIFICATE_P12_BASE64" \
+            && -n "$APPLE_CERTIFICATE_PASSWORD" \
+            && -n "$CODESIGN_IDENTITY" ]]; then
+            has_signing_identity=true
+            signing_enabled=true
+          fi
+
+          if [[ -n "$APPLE_ID" \
+            && -n "$APPLE_TEAM_ID" \
+            && -n "$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
+            has_notary_credentials=true
+          fi
+
+          case "${{ steps.meta.outputs.notarize }}" in
+            true)
+              if [[ "$has_signing_identity" != "true" ]]; then
+                echo "::error::notarize=true requires APPLE_CERTIFICATE_P12_BASE64, APPLE_CERTIFICATE_PASSWORD, and CODESIGN_IDENTITY secrets."
+                exit 2
+              fi
+              if [[ "$has_notary_credentials" != "true" ]]; then
+                echo "::error::notarize=true requires APPLE_ID, APPLE_TEAM_ID, and APPLE_APP_SPECIFIC_PASSWORD secrets."
+                exit 2
+              fi
+              notarize_enabled=true
+              ;;
+            auto)
+              if [[ "$has_signing_identity" == "true" \
+                && "$has_notary_credentials" == "true" ]]; then
+                notarize_enabled=true
+              else
+                echo "::notice::Developer ID notarization is disabled because one or more Apple release secrets are missing."
+              fi
+              ;;
+            false)
+              ;;
+          esac
+
+          if [[ "$signing_enabled" == "true" && "$notarize_enabled" != "true" ]]; then
+            echo "::notice::Release will be Developer ID signed but not notarized."
+          elif [[ "$signing_enabled" != "true" ]]; then
+            echo "::notice::Release will use ad hoc signing."
+          fi
+
+          echo "signing_enabled=$signing_enabled" >>"$GITHUB_OUTPUT"
+          echo "notarize_enabled=$notarize_enabled" >>"$GITHUB_OUTPUT"
 
       - name: Show Swift toolchain
         run: swift --version
@@ -74,11 +165,72 @@ jobs:
           SWIFT_WARNINGS_AS_ERRORS=1 \
           ./script/build_and_run.sh --verify --release
 
-      - name: Package release
+      - name: Import Developer ID certificate
+        if: steps.release_mode.outputs.signing_enabled == 'true'
+        env:
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
         run: |
-          APP_VERSION="${{ steps.meta.outputs.version }}" \
-          APP_BUILD="$GITHUB_RUN_NUMBER" \
-          ./script/package_release.sh
+          set -euo pipefail
+
+          certificate_path="$RUNNER_TEMP/developer-id-application.p12"
+          keychain_path="$RUNNER_TEMP/codex-keyring-signing.keychain-db"
+
+          printf '%s' "$APPLE_CERTIFICATE_P12_BASE64" \
+            | /usr/bin/base64 --decode >"$certificate_path"
+
+          /usr/bin/security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          /usr/bin/security set-keychain-settings -lut 21600 "$keychain_path"
+          /usr/bin/security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          /usr/bin/security import "$certificate_path" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -k "$keychain_path"
+          /usr/bin/security list-keychains -d user -s "$keychain_path"
+          /usr/bin/security default-keychain -s "$keychain_path"
+          /usr/bin/security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$keychain_path"
+          /usr/bin/security find-identity -v -p codesigning "$keychain_path"
+
+      - name: Package release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_env=(
+            "APP_VERSION=${{ steps.meta.outputs.version }}"
+            "APP_BUILD=$GITHUB_RUN_NUMBER"
+            "SWIFT_WARNINGS_AS_ERRORS=1"
+          )
+
+          if [[ "${{ steps.release_mode.outputs.signing_enabled }}" == "true" ]]; then
+            package_env+=(
+              "CODESIGN_IDENTITY=$CODESIGN_IDENTITY"
+              "AD_HOC_SIGN=0"
+            )
+          fi
+
+          if [[ "${{ steps.release_mode.outputs.notarize_enabled }}" == "true" ]]; then
+            package_env+=(
+              "NOTARIZE_RELEASE=1"
+              "APPLE_ID=$APPLE_ID"
+              "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+              "APPLE_APP_SPECIFIC_PASSWORD=$APPLE_APP_SPECIFIC_PASSWORD"
+            )
+          fi
+
+          env "${package_env[@]}" ./script/package_release.sh
+
+      - name: Verify release artifacts
+        run: |
+          set -euo pipefail
+
+          cd dist/release
+          /usr/bin/shasum -a 256 -c *.sha256
+          /bin/ls -lh
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
@@ -94,6 +246,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.meta.outputs.version }}
+        shell: bash
         run: |
           set -euo pipefail
 
@@ -104,12 +257,21 @@ jobs:
           fi
 
           notes_file="dist/release/CodexKeyring-$RELEASE_VERSION-release-notes.md"
+          assets=(
+            dist/release/*.zip
+            dist/release/*.sha256
+            dist/release/*release-notes.md
+          )
 
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/release/*.zip dist/release/*.sha256 --clobber
+            gh release upload "$tag" "${assets[@]}" --clobber
           else
-            gh release create "$tag" dist/release/*.zip dist/release/*.sha256 \
+            gh release create "$tag" "${assets[@]}" \
               --title "Codex Keyring $RELEASE_VERSION" \
               --notes-file "$notes_file" \
               --target "$GITHUB_SHA"
           fi
+
+      - name: Delete signing keychain
+        if: always() && steps.release_mode.outputs.signing_enabled == 'true'
+        run: /usr/bin/security delete-keychain "$RUNNER_TEMP/codex-keyring-signing.keychain-db" || true

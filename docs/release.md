@@ -50,18 +50,27 @@ Use `Actions > Release > Run workflow` for a release candidate build.
 - `run_app_smoke`: optional runner launch check.
 - `notarize`: `auto` uses notarization only when all Apple secrets exist.
 
+Artifact-only release candidates can run from a development branch. Creating a
+GitHub Release manually must run from `main`.
+
 ## Official Release
 
-Create and push a version tag from a verified commit:
+Official releases are cut from `main`. Promote the verified development commit
+to `main`, then tag that `main` commit:
 
 ```bash
+git switch main
+git pull --ff-only origin main
+git merge --ff-only origin/develop
 ./script/verify.sh --release
+git push origin main
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
 Pushing a `v*` tag runs the release workflow and creates or updates the GitHub
-Release for that tag.
+Release for that tag. The workflow rejects release tags that do not point to a
+commit in `origin/main` history.
 
 ## Local Packaging
 

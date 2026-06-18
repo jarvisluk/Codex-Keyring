@@ -57,6 +57,30 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce main release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_branch="main"
+          git fetch --no-tags --prune origin \
+            "+refs/heads/$release_branch:refs/remotes/origin/$release_branch"
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/$release_branch"; then
+              echo "::error::Release tags must point to a commit on origin/$release_branch."
+              exit 2
+            fi
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" \
+            && "$INPUT_CREATE_RELEASE" == "true" ]]; then
+            if [[ "$GITHUB_REF_TYPE" != "branch" || "$GITHUB_REF_NAME" != "$release_branch" ]]; then
+              echo "::error::Manual GitHub Release creation must run from $release_branch."
+              exit 2
+            fi
+          fi
 
       - name: Resolve release metadata
         id: meta

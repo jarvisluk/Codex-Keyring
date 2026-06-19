@@ -40,9 +40,10 @@ concurrency:
 jobs:
   release:
     name: Build release package
-    runs-on: macos-15
+    runs-on: macos-26
 
     env:
+      MIN_RELEASE_MACOS_SDK_MAJOR: "26"
       INPUT_VERSION: ${{ github.event.inputs.version || '' }}
       INPUT_CREATE_RELEASE: ${{ github.event.inputs.create_release || 'false' }}
       INPUT_RUN_APP_SMOKE: ${{ github.event.inputs.run_app_smoke || 'false' }}
@@ -180,7 +181,24 @@ jobs:
           echo "notarize_enabled=$notarize_enabled" >>"$GITHUB_OUTPUT"
 
       - name: Show Swift toolchain
-        run: swift --version
+        run: |
+          swift --version
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-version
+          xcrun --sdk macosx --show-sdk-path
+
+      - name: Verify release SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sdk_version="$(xcrun --sdk macosx --show-sdk-version)"
+          sdk_major="${sdk_version%%.*}"
+
+          if (( sdk_major < MIN_RELEASE_MACOS_SDK_MAJOR )); then
+            echo "::error::Release builds must link against macOS SDK ${MIN_RELEASE_MACOS_SDK_MAJOR}.x or newer; found $sdk_version."
+            exit 2
+          fi
 
       - name: Verify release build
         run: ./script/verify.sh --clean --release

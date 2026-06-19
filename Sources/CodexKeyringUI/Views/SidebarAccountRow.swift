@@ -27,7 +27,9 @@ struct SidebarAccountRow: View {
                     .foregroundStyle(presentation.titleTint.color)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                detailLine
+                if let detailSummary = presentation.detailSummary {
+                    detailLine(detailSummary)
+                }
             }
         }
         .padding(.vertical, 3)
@@ -35,22 +37,12 @@ struct SidebarAccountRow: View {
         .accessibilityLabel(presentation.accessibilitySummary)
     }
 
-    private var detailLine: some View {
-        HStack(spacing: KeyringStyle.Spacing.inlineTight) {
-            Text(presentation.subtitle)
-                .foregroundStyle(presentation.secondaryTextTint.color)
-                .truncationMode(.middle)
-                .layoutPriority(0)
-            if let quota = presentation.quotaSummary {
-                Text("-")
-                    .foregroundStyle(presentation.secondaryTextTint.color)
-                Text(quota)
-                    .foregroundStyle(presentation.quotaTextTint.color)
-                    .truncationMode(.tail)
-                    .layoutPriority(1)
-            }
-        }
-        .font(.caption)
-        .lineLimit(1)
+    private func detailLine(_ quota: String) -> some View {
+        Text(quota)
+            .foregroundStyle(presentation.quotaTextTint.color)
+            .truncationMode(.tail)
+            .layoutPriority(1)
+            .font(.caption)
+            .lineLimit(1)
     }
 }

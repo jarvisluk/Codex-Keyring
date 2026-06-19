@@ -17,8 +17,8 @@ Runs the standard Codex Keyring verification checks.
 Options:
   --app       also build, launch, verify, and cleanly exit the staged app
   --clean     clear SwiftPM build artifacts before running checks
-  --release   also compile the SwiftPM release configuration; with --app,
-              smoke-test the staged release app bundle
+  --release   also compile and package the SwiftPM release configuration;
+              with --app, smoke-test the staged release app bundle
   -h,--help   show this help
 USAGE
 }
@@ -96,6 +96,7 @@ run_step swift test "${SWIFT_WARNING_FLAGS[@]}"
 
 if ((RUN_RELEASE_BUILD)); then
   run_step swift build -c release "${SWIFT_WARNING_FLAGS[@]}"
+  run_step "$ROOT_DIR/script/package_release.sh" --version 0.0.0 --build 0
 fi
 
 run_step bash -n "$ROOT_DIR/script/build_and_run.sh"

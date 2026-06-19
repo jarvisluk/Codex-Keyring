@@ -21,6 +21,7 @@ APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 CLI_BINARY="$APP_RESOURCES/$CLI_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+BUNDLE_FRAMEWORK_RPATH="@executable_path/../Frameworks"
 APP_ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.icns"
 APP_ICON_NAME="AppIcon"
 MENU_BAR_ICON_SOURCE="$ROOT_DIR/Resources/MenuBarIcon.svg"
@@ -88,6 +89,7 @@ swift_build_args=()
 if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
   swift_build_args=(-c release)
 fi
+swift_build_args+=(-Xlinker -rpath -Xlinker "$BUNDLE_FRAMEWORK_RPATH")
 if [[ "$SWIFT_WARNINGS_AS_ERRORS" == "1" ]]; then
   swift_build_args+=(-Xswiftc -warnings-as-errors)
 fi
@@ -112,10 +114,10 @@ copy_sparkle_framework() {
   /usr/bin/ditto "$framework_source" "$APP_FRAMEWORKS/Sparkle.framework"
 }
 
-add_bundle_framework_rpath() {
-  if ! otool -l "$APP_BINARY" | grep -q "@executable_path/../Frameworks"; then
-    /usr/bin/codesign --remove-signature "$APP_BINARY" >/dev/null 2>&1 || true
-    /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BINARY"
+verify_bundle_framework_rpath() {
+  if ! /usr/bin/otool -l "$APP_BINARY" | /usr/bin/grep -Fq "$BUNDLE_FRAMEWORK_RPATH"; then
+    echo "App binary is missing required rpath: $BUNDLE_FRAMEWORK_RPATH" >&2
+    exit 1
   fi
 }
 
@@ -158,7 +160,7 @@ cp "$MENU_BAR_ICON_SOURCE" "$APP_RESOURCES/MenuBarIcon.svg"
 chmod +x "$APP_BINARY"
 chmod +x "$CLI_BINARY"
 copy_sparkle_framework
-add_bundle_framework_rpath
+verify_bundle_framework_rpath
 
 SPARKLE_INFO_PLIST=""
 if [[ -n "$SPARKLE_FEED_URL" && -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then

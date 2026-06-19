@@ -3,6 +3,7 @@ import CodexKeyringDomain
 
 struct MenuBarAccountsSection: View {
     @EnvironmentObject private var store: AccountStore
+    @Environment(\.accountSensitiveValuesVisible) private var showsAccountSensitiveValues
 
     var body: some View {
         if !store.accounts.isEmpty {
@@ -19,7 +20,8 @@ struct MenuBarAccountsSection: View {
         let presentation = MenuBarAccountPresentation(
             account: account,
             isActive: isActive,
-            canSwitch: store.canSwitch(to: account)
+            canSwitch: store.canSwitch(to: account),
+            showsSensitiveValues: showsAccountSensitiveValues
         )
         return Button {
             guard !isActive else { return }

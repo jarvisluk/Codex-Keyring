@@ -21,8 +21,16 @@ struct MenuBarAccountPresentation: Equatable {
     let statusIconTint: MenuBarAccountTint
     let canSwitch: Bool
 
-    init(account: CodexAccount, isActive: Bool = false, canSwitch: Bool = true) {
-        title = account.displayName.cappedMenuBarText
+    init(
+        account: CodexAccount,
+        isActive: Bool = false,
+        canSwitch: Bool = true,
+        showsSensitiveValues: Bool = false
+    ) {
+        title = AccountSensitiveText.displayName(
+            for: account,
+            revealed: showsSensitiveValues
+        ).cappedMenuBarText
         statusSystemImage = isActive ? "checkmark.circle.fill" : "person.crop.circle"
         statusIconTint = isActive ? .active : .secondary
         self.canSwitch = canSwitch

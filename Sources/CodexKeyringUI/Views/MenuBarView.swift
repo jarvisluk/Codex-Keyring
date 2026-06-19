@@ -2,8 +2,11 @@ import SwiftUI
 
 public struct MenuBarView: View {
     @EnvironmentObject private var store: AccountStore
+    @Binding private var showsAccountSensitiveValues: Bool
 
-    public init() {}
+    public init(showsAccountSensitiveValues: Binding<Bool> = .constant(false)) {
+        _showsAccountSensitiveValues = showsAccountSensitiveValues
+    }
 
     public var body: some View {
         VStack {
@@ -13,6 +16,15 @@ public struct MenuBarView: View {
             }
 
             MenuBarOpenManagerAction()
+
+            Button {
+                showsAccountSensitiveValues.toggle()
+            } label: {
+                Label(
+                    showsAccountSensitiveValues ? "Hide Sensitive Info" : "Show Sensitive Info",
+                    systemImage: showsAccountSensitiveValues ? "eye.slash" : "eye"
+                )
+            }
 
             MenuBarAddCurrentLoginAction()
 
@@ -24,5 +36,6 @@ public struct MenuBarView: View {
 
             MenuBarAppActionsSection()
         }
+        .environment(\.accountSensitiveValuesVisible, showsAccountSensitiveValues)
     }
 }

@@ -9,7 +9,8 @@ final class CurrentAuthPresentationTests: XCTestCase {
         let presentation = CurrentAuthFooterPresentation(
             metadata: metadata,
             savedAccount: account,
-            authPath: "/Users/example/.codex/auth.json"
+            authPath: "/Users/example/.codex/auth.json",
+            showsSensitiveValues: true
         )
 
         XCTAssertEqual(presentation.title, "person@example.com")
@@ -20,6 +21,24 @@ final class CurrentAuthPresentationTests: XCTestCase {
         XCTAssertEqual(
             presentation.accessibilitySummary,
             "Current Codex Auth: person@example.com. Saved as Work."
+        )
+    }
+
+    func testCurrentAuthFooterPresentationMasksSensitiveValuesByDefault() {
+        let account = makePresentationAccount(alias: "", email: "person@example.com")
+        let metadata = makePresentationMetadata(email: "person@example.com")
+
+        let presentation = CurrentAuthFooterPresentation(
+            metadata: metadata,
+            savedAccount: account,
+            authPath: "/Users/example/.codex/auth.json"
+        )
+
+        XCTAssertEqual(presentation.title, "pe****@e****.com")
+        XCTAssertEqual(presentation.subtitle, "Saved as pe****@e****.com")
+        XCTAssertEqual(
+            presentation.accessibilitySummary,
+            "Current Codex Auth: pe****@e****.com. Saved as pe****@e****.com."
         )
     }
 
@@ -40,6 +59,7 @@ final class CurrentAuthPresentationTests: XCTestCase {
         XCTAssertEqual(unreadable.statusSystemImage, "person.crop.circle.badge.questionmark")
         XCTAssertEqual(unreadable.statusIconTint, .secondary)
         XCTAssertEqual(unreadable.title, "No readable auth.json")
+        XCTAssertEqual(unreadable.subtitle, "/Use****json")
     }
 
     func testCurrentAuthFooterPresentationCarriesSaveActionState() {

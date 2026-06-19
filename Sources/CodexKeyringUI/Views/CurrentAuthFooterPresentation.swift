@@ -19,7 +19,9 @@ struct CurrentAuthFooterPresentation: Equatable {
     let statusSystemImage: String
     let statusIconTint: CurrentAuthFooterTint
     let title: String
+    let titleLayoutValue: String
     let subtitle: String
+    let subtitleLayoutValue: String
     let contextMenuTitle: String
     let showsSaveAction: Bool
     let canSaveAction: Bool
@@ -30,7 +32,8 @@ struct CurrentAuthFooterPresentation: Equatable {
         savedAccount: CodexAccount?,
         authPath: String,
         showsSaveAction: Bool = false,
-        canSaveAction: Bool = false
+        canSaveAction: Bool = false,
+        showsSensitiveValues: Bool = false
     ) {
         statusIconTint = savedAccount != nil ? .saved : .secondary
         self.showsSaveAction = showsSaveAction
@@ -44,19 +47,32 @@ struct CurrentAuthFooterPresentation: Equatable {
         }
 
         if let metadata {
-            title = MetadataDisplayText.text(metadata.email, fallback: "Unknown email")
+            titleLayoutValue = MetadataDisplayText.text(metadata.email, fallback: "Unknown email")
+            title = AccountSensitiveText.display(titleLayoutValue, revealed: showsSensitiveValues)
         } else {
+            titleLayoutValue = "No readable auth.json"
             title = "No readable auth.json"
         }
 
         if let savedAccount {
-            subtitle = "Saved as \(savedAccount.displayName)"
+            let savedAccountName = AccountSensitiveText.displayName(
+                for: savedAccount,
+                revealed: showsSensitiveValues
+            )
+            let savedAccountLayoutName = AccountSensitiveText.displayName(
+                for: savedAccount,
+                revealed: true
+            )
+            subtitle = "Saved as \(savedAccountName)"
+            subtitleLayoutValue = "Saved as \(savedAccountLayoutName)"
             contextMenuTitle = "Already in Credentials"
         } else if metadata != nil {
             subtitle = "Not in credentials"
+            subtitleLayoutValue = "Not in credentials"
             contextMenuTitle = "Add to Credentials"
         } else {
-            subtitle = authPath
+            subtitle = AccountSensitiveText.display(authPath, revealed: showsSensitiveValues)
+            subtitleLayoutValue = authPath
             contextMenuTitle = "Add to Credentials"
         }
 

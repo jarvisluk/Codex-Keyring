@@ -2,11 +2,21 @@ import SwiftUI
 import CodexKeyringDomain
 
 struct AccountDetailView: View {
+    init(
+        account: CodexAccount,
+        showsAccountSensitiveValues: Binding<Bool> = .constant(false)
+    ) {
+        self.account = account
+        _showsAccountSensitiveValues = showsAccountSensitiveValues
+    }
+
     @EnvironmentObject private var store: AccountStore
+    @Environment(\.accountSensitiveValuesVisible) private var sensitiveValuesVisible
+    @Binding private var showsAccountSensitiveValues: Bool
     @State private var showingRemoveConfirmation = false
     @State private var rename = AccountDetailRenameState()
 
-    var account: CodexAccount
+    let account: CodexAccount
 
     private var isActive: Bool {
         store.activeAccount?.id == account.id
@@ -32,8 +42,13 @@ struct AccountDetailView: View {
                 onRemove: { showingRemoveConfirmation = true }
             )
         }
-        .navigationTitle(account.displayName)
+        .scrollIndicators(.hidden)
+        .navigationTitle(AccountSensitiveText.displayName(
+            for: account,
+            revealed: sensitiveValuesVisible
+        ))
         .hidesWindowToolbarTitle()
+        .toolbar { sensitiveValuesToolbar }
         .onAppear {
             rename.reset(alias: account.alias)
         }
@@ -86,5 +101,12 @@ struct AccountDetailView: View {
             canBeginRename: store.canBeginRename(account),
             canRemove: store.canRemove(account)
         )
+    }
+
+    @ToolbarContentBuilder
+    private var sensitiveValuesToolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            AccountSensitiveValuesToggleButton(isVisible: $showsAccountSensitiveValues)
+        }
     }
 }

@@ -2,14 +2,12 @@ import CodexKeyringDomain
 
 struct SidebarAccountPresentation: Equatable {
     let title: String
-    let subtitle: String
-    let quotaSummary: String?
-    let quotaAccessibilitySummary: String?
+    let detailSummary: String?
+    let detailAccessibilitySummary: String?
     let accessibilitySummary: String
     let statusSystemImage: String
     let statusIconTint: SidebarAccountTint
     let titleTint: SidebarAccountTint
-    let secondaryTextTint: SidebarAccountTint
     let quotaTextTint: SidebarAccountTint
 
     init(
@@ -18,24 +16,53 @@ struct SidebarAccountPresentation: Equatable {
         isSelected: Bool = false,
         quotaState: AccountQuotaState?
     ) {
-        self.title = account.displayName
-        self.subtitle = account.displayEmail
-        self.quotaSummary = quotaState?.compactSidebarSummary
-        self.quotaAccessibilitySummary = quotaState?.sidebarSummary
+        self.title = Self.title(for: account)
+        let planSummary = Self.planSummary(for: account)
+        let quotaSummary = quotaState?.compactSidebarSummary
+        let quotaAccessibilitySummary = quotaState?.sidebarSummary
+        self.detailSummary = Self.joinedDetailSummary([
+            planSummary,
+            quotaSummary
+        ])
+        self.detailAccessibilitySummary = Self.joinedDetailSummary([
+            planSummary,
+            quotaAccessibilitySummary
+        ])
         self.statusSystemImage = isActive ? "checkmark.circle.fill" : "person.crop.circle"
         self.statusIconTint = Self.statusIconTint(isActive: isActive, isSelected: isSelected)
         self.titleTint = isSelected ? .selectedPrimary : .primary
-        self.secondaryTextTint = isSelected ? .selectedSecondary : .secondary
         self.quotaTextTint = Self.quotaTextTint(isSelected: isSelected, quotaState: quotaState)
 
-        var accessibilityParts = [title, subtitle]
+        var accessibilityParts = [title]
         if isActive {
             accessibilityParts.append("active")
         }
-        if let quotaAccessibilitySummary {
-            accessibilityParts.append(quotaAccessibilitySummary)
+        if let detailAccessibilitySummary {
+            accessibilityParts.append(detailAccessibilitySummary)
         }
         self.accessibilitySummary = accessibilityParts.joined(separator: ", ")
+    }
+
+    private static func title(for account: CodexAccount) -> String {
+        let alias = account.alias.trimmingCharacters(in: .whitespacesAndNewlines)
+        return alias.isEmpty ? "Unnamed account" : alias
+    }
+
+    private static func planSummary(for account: CodexAccount) -> String? {
+        let plan = account.plan.trimmingCharacters(in: .whitespacesAndNewlines)
+        return plan.isEmpty ? nil : plan
+    }
+
+    private static func joinedDetailSummary(_ parts: [String?]) -> String? {
+        let displayParts = parts.compactMap { part -> String? in
+            guard let trimmed = part?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !trimmed.isEmpty
+            else {
+                return nil
+            }
+            return trimmed
+        }
+        return displayParts.isEmpty ? nil : displayParts.joined(separator: " - ")
     }
 
     private static func statusIconTint(isActive: Bool, isSelected: Bool) -> SidebarAccountTint {

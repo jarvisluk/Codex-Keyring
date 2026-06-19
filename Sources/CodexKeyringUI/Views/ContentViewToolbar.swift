@@ -14,7 +14,7 @@ extension ContentView {
 
     @ToolbarContentBuilder
     var accountToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
+        ToolbarItem(placement: .navigation) {
             Button {
                 performToolbarLoginAction()
             } label: {
@@ -27,7 +27,9 @@ extension ContentView {
             .help(toolbarPresentation.addLoginCancelsInProgress
                 ? "Cancel the current Codex browser login."
                 : "Open Codex login and save the new account without switching the current auth.")
+        }
 
+        ToolbarItem(placement: .navigation) {
             Button {
                 importAuthFile()
             } label: {
@@ -35,7 +37,9 @@ extension ContentView {
             }
             .disabled(!toolbarPresentation.canImport)
             .help("Import Codex auth.json")
+        }
 
+        ToolbarItem(placement: .navigation) {
             Button {
                 store.refresh()
             } label: {
@@ -49,9 +53,13 @@ extension ContentView {
             .keyboardShortcut("r", modifiers: [.command])
             .help("Refresh accounts")
         }
+
+        ToolbarItem {
+            Spacer()
+        }
     }
 
-    private func performToolbarLoginAction() {
+    func performToolbarLoginAction() {
         if toolbarPresentation.addLoginCancelsInProgress {
             cancelNewLogin()
         } else {

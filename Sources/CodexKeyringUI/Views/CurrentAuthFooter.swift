@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CurrentAuthFooter: View {
     @EnvironmentObject private var store: AccountStore
+    @Environment(\.accountSensitiveValuesVisible) private var showsAccountSensitiveValues
     let onAddCurrentLogin: () -> Void
 
     private var presentation: CurrentAuthFooterPresentation {
@@ -10,7 +11,8 @@ struct CurrentAuthFooter: View {
             savedAccount: store.savedAccountForCurrentAuth,
             authPath: store.storageLocations.codexAuthPath,
             showsSaveAction: store.canSaveCurrentAuth,
-            canSaveAction: store.canAddCurrentLogin
+            canSaveAction: store.canAddCurrentLogin,
+            showsSensitiveValues: showsAccountSensitiveValues
         )
     }
 
@@ -26,12 +28,20 @@ struct CurrentAuthFooter: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
-                Text(presentation.title)
+                AccountSensitiveValueText(
+                    presentation.titleLayoutValue,
+                    revealed: showsAccountSensitiveValues,
+                    displayValue: presentation.title
+                )
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                Text(presentation.subtitle)
+                AccountSensitiveValueText(
+                    presentation.subtitleLayoutValue,
+                    revealed: showsAccountSensitiveValues,
+                    displayValue: presentation.subtitle
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -66,6 +76,9 @@ struct CurrentAuthFooter: View {
             }
             .disabled(!presentation.canSaveAction)
         }
-        .help(store.storageLocations.codexAuthPath)
+        .help(AccountSensitiveText.display(
+            store.storageLocations.codexAuthPath,
+            revealed: showsAccountSensitiveValues
+        ))
     }
 }

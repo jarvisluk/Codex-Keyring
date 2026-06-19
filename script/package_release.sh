@@ -19,6 +19,9 @@ NOTARYTOOL_KEYCHAIN="${NOTARYTOOL_KEYCHAIN:-}"
 NOTARYTOOL_TIMEOUT="${NOTARYTOOL_TIMEOUT:-30m}"
 VERSION="${APP_VERSION:-}"
 BUILD_NUMBER="${APP_BUILD:-}"
+SPARKLE_REQUIRED="${SPARKLE_REQUIRED:-0}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-}"
+SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
 
 usage() {
   cat <<USAGE
@@ -48,6 +51,9 @@ Environment:
   NOTARYTOOL_KEYCHAIN_PROFILE=<profile>    notarytool keychain profile auth
   NOTARYTOOL_KEYCHAIN=<path>               keychain for the profile, optional
   NOTARYTOOL_TIMEOUT=30m                   notarytool wait timeout
+  SPARKLE_FEED_URL=<url>                   appcast URL to embed for updates
+  SPARKLE_PUBLIC_ED_KEY=<key>              public EdDSA key for update checks
+  SPARKLE_REQUIRED=1                       fail when Sparkle settings are missing
 USAGE
 }
 
@@ -136,6 +142,13 @@ if [[ "$NOTARIZE_RELEASE" == "1" && -z "$SIGN_IDENTITY" ]]; then
   exit 2
 fi
 
+if [[ "$SPARKLE_REQUIRED" == "1" || "$SPARKLE_REQUIRED" == "true" ]]; then
+  if [[ -z "$SPARKLE_FEED_URL" || -z "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+    echo "SPARKLE_FEED_URL and SPARKLE_PUBLIC_ED_KEY are required for update-enabled releases." >&2
+    exit 2
+  fi
+fi
+
 rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
 
@@ -149,6 +162,8 @@ fi
 env \
   APP_VERSION="$VERSION" \
   APP_BUILD="$BUILD_NUMBER" \
+  SPARKLE_FEED_URL="$SPARKLE_FEED_URL" \
+  SPARKLE_PUBLIC_ED_KEY="$SPARKLE_PUBLIC_ED_KEY" \
   SWIFT_WARNINGS_AS_ERRORS=1 \
   "$ROOT_DIR/script/build_and_run.sh" "${build_args[@]}"
 
@@ -192,6 +207,7 @@ ZIP_NAME="$ARTIFACT_PREFIX-$VERSION-macOS.zip"
 ZIP_PATH="$RELEASE_DIR/$ZIP_NAME"
 CHECKSUM_PATH="$RELEASE_DIR/$ZIP_NAME.sha256"
 NOTES_PATH="$RELEASE_DIR/$ARTIFACT_PREFIX-$VERSION-release-notes.md"
+APPCAST_NOTES_PATH="$RELEASE_DIR/${ZIP_NAME%.zip}.md"
 
 notarize_app_bundle() {
   local notary_zip="$RELEASE_DIR/$ARTIFACT_PREFIX-$VERSION-notary-submission.zip"
@@ -250,6 +266,7 @@ fi
     printf 'treating it as a public macOS distribution build.\n'
   fi
 } >"$NOTES_PATH"
+cp "$NOTES_PATH" "$APPCAST_NOTES_PATH"
 
 printf 'Release package written:\n'
 printf '  %s\n' "$ZIP_PATH"

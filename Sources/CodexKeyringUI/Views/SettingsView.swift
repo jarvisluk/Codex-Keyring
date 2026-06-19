@@ -11,6 +11,8 @@ public struct SettingsView: View {
             VStack(alignment: .leading, spacing: KeyringStyle.Spacing.settingsSection) {
                 SettingsPreferencesSection()
                 Divider()
+                SettingsUpdatesSection()
+                Divider()
                 SettingsLocationsSection()
                 Divider()
                 SettingsCommandLineSection()

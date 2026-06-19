@@ -17,6 +17,7 @@ APP_BUNDLE="$DIST_DIR/$BUNDLE_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
+APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 CLI_BINARY="$APP_RESOURCES/$CLI_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
@@ -26,6 +27,11 @@ MENU_BAR_ICON_SOURCE="$ROOT_DIR/Resources/MenuBarIcon.svg"
 VERIFY_TIMEOUT_SECONDS="${VERIFY_TIMEOUT_SECONDS:-10}"
 VERIFY_KEEP_APP="${VERIFY_KEEP_APP:-0}"
 SWIFT_WARNINGS_AS_ERRORS="${SWIFT_WARNINGS_AS_ERRORS:-0}"
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-}"
+SPARKLE_PUBLIC_ED_KEY="${SPARKLE_PUBLIC_ED_KEY:-}"
+SPARKLE_ENABLE_AUTOMATIC_CHECKS="${SPARKLE_ENABLE_AUTOMATIC_CHECKS:-1}"
+SPARKLE_AUTOMATICALLY_UPDATE="${SPARKLE_AUTOMATICALLY_UPDATE:-0}"
+STAGED_APP_AD_HOC_SIGN="${STAGED_APP_AD_HOC_SIGN:-1}"
 
 cd "$ROOT_DIR"
 
@@ -44,6 +50,9 @@ Environment:
   SWIFT_WARNINGS_AS_ERRORS=1   compile Swift sources with warnings as errors
   APP_VERSION=0.1.0            set CFBundleShortVersionString
   APP_BUILD=1                  set CFBundleVersion
+  SPARKLE_FEED_URL=<url>       embed a Sparkle appcast URL
+  SPARKLE_PUBLIC_ED_KEY=<key>  embed the Sparkle public EdDSA key
+  STAGED_APP_AD_HOC_SIGN=0     skip local ad hoc signing after staging
 USAGE
 }
 
@@ -83,6 +92,52 @@ if [[ "$SWIFT_WARNINGS_AS_ERRORS" == "1" ]]; then
   swift_build_args+=(-Xswiftc -warnings-as-errors)
 fi
 
+find_sparkle_framework() {
+  find "$ROOT_DIR/.build" \
+    -path "*/Sparkle.framework" \
+    -type d \
+    -name "Sparkle.framework" \
+    -print \
+    2>/dev/null | head -n 1
+}
+
+copy_sparkle_framework() {
+  local framework_source
+  framework_source="$(find_sparkle_framework)"
+  if [[ -z "$framework_source" ]]; then
+    echo "Sparkle.framework was not found under .build after swift build." >&2
+    exit 1
+  fi
+
+  /usr/bin/ditto "$framework_source" "$APP_FRAMEWORKS/Sparkle.framework"
+}
+
+add_bundle_framework_rpath() {
+  if ! otool -l "$APP_BINARY" | grep -q "@executable_path/../Frameworks"; then
+    /usr/bin/codesign --remove-signature "$APP_BINARY" >/dev/null 2>&1 || true
+    /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BINARY"
+  fi
+}
+
+sign_staged_app() {
+  case "$STAGED_APP_AD_HOC_SIGN" in
+    1|true|TRUE|yes|YES)
+      /usr/bin/codesign --force --sign - "$APP_BUNDLE" >/dev/null
+      ;;
+  esac
+}
+
+plist_bool() {
+  case "$1" in
+    1|true|TRUE|yes|YES)
+      printf 'true'
+      ;;
+    *)
+      printf 'false'
+      ;;
+  esac
+}
+
 stop_app() {
   pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 }
@@ -95,13 +150,30 @@ BUILD_CLI_BINARY="$BUILD_BIN_DIR/$CLI_NAME"
 stop_app
 
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_MACOS" "$APP_RESOURCES"
+mkdir -p "$APP_MACOS" "$APP_RESOURCES" "$APP_FRAMEWORKS"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$BUILD_CLI_BINARY" "$CLI_BINARY"
 cp "$APP_ICON_SOURCE" "$APP_RESOURCES/$APP_ICON_NAME.icns"
 cp "$MENU_BAR_ICON_SOURCE" "$APP_RESOURCES/MenuBarIcon.svg"
 chmod +x "$APP_BINARY"
 chmod +x "$CLI_BINARY"
+copy_sparkle_framework
+add_bundle_framework_rpath
+
+SPARKLE_INFO_PLIST=""
+if [[ -n "$SPARKLE_FEED_URL" && -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then
+  SPARKLE_INFO_PLIST=$(cat <<PLIST
+  <key>SUFeedURL</key>
+  <string>$SPARKLE_FEED_URL</string>
+  <key>SUPublicEDKey</key>
+  <string>$SPARKLE_PUBLIC_ED_KEY</string>
+  <key>SUEnableAutomaticChecks</key>
+  <$(plist_bool "$SPARKLE_ENABLE_AUTOMATIC_CHECKS")/>
+  <key>SUAutomaticallyUpdate</key>
+  <$(plist_bool "$SPARKLE_AUTOMATICALLY_UPDATE")/>
+PLIST
+)
+fi
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -128,9 +200,12 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+$SPARKLE_INFO_PLIST
 </dict>
 </plist>
 PLIST
+
+sign_staged_app
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"

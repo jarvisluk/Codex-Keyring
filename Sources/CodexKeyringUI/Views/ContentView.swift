@@ -1,9 +1,13 @@
 import SwiftUI
 
 public struct ContentView: View {
-    public init() {}
+    public init(showsAccountSensitiveValues: Binding<Bool> = .constant(false)) {
+        _showsAccountSensitiveValues = showsAccountSensitiveValues
+    }
+
     @EnvironmentObject var store: AccountStore
     @EnvironmentObject var settingsPresentation: SettingsPresentationStore
+    @Binding var showsAccountSensitiveValues: Bool
     @SceneStorage("selectedAccountID") var selectedAccountIDString: String?
     @State var showingAddCurrentSheet = false
 
@@ -26,12 +30,16 @@ public struct ContentView: View {
                     .accessibilityHidden(true)
             }
         }
-        .background(MainWindowChromeConfigurator())
+        .background(
+            MainWindowChromeConfigurator()
+        )
+        .environment(\.accountSensitiveValuesVisible, showsAccountSensitiveValues)
         .toolbar { accountToolbar }
         .accountStoreFailureAlert(store)
         .sheet(isPresented: $showingAddCurrentSheet) {
             AddCurrentAccountSheet()
                 .environmentObject(store)
+                .environment(\.accountSensitiveValuesVisible, showsAccountSensitiveValues)
         }
         .onAppear {
             reconcileSelection()
@@ -54,7 +62,10 @@ extension ContentView {
     @ViewBuilder
     var detailContent: some View {
         if let selectedAccount {
-            AccountDetailView(account: selectedAccount)
+            AccountDetailView(
+                account: selectedAccount,
+                showsAccountSensitiveValues: $showsAccountSensitiveValues
+            )
         } else {
             EmptyAccountsView(
                 onAddCurrentLogin: showAddCurrentLoginSheet,

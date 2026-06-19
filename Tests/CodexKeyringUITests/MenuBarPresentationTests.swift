@@ -25,6 +25,16 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertFalse(active.canSwitch)
     }
 
+    func testMenuBarAccountPresentationMasksEmailFallbackByDefault() {
+        let account = makePresentationAccount(alias: "", email: "person@example.com")
+
+        let hidden = MenuBarAccountPresentation(account: account)
+        let visible = MenuBarAccountPresentation(account: account, showsSensitiveValues: true)
+
+        XCTAssertEqual(hidden.title, "pe****@e****.com")
+        XCTAssertEqual(visible.title, "person@example.com")
+    }
+
     func testMenuBarQuotaPresentationUsesVisibleSummaryAndHealth() throws {
         let accountID = UUID()
         let errorState = AccountQuotaState.error(
@@ -49,5 +59,15 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertEqual(inactive.statusLabel, "Codex Keyring: no active saved account")
         XCTAssertTrue(active.isActive)
         XCTAssertEqual(active.statusLabel, "Codex Keyring: Work active")
+    }
+
+    func testAppMenuBarPresentationMasksEmailFallbackByDefault() {
+        let account = makePresentationAccount(alias: "", email: "person@example.com")
+
+        let hidden = AppMenuBarPresentation(activeAccount: account)
+        let visible = AppMenuBarPresentation(activeAccount: account, showsSensitiveValues: true)
+
+        XCTAssertEqual(hidden.statusLabel, "Codex Keyring: pe****@e****.com active")
+        XCTAssertEqual(visible.statusLabel, "Codex Keyring: person@example.com active")
     }
 }

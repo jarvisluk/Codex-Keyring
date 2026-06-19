@@ -2,6 +2,8 @@ import SwiftUI
 import CodexKeyringDomain
 
 struct AccountDetailMetadataGrid: View {
+    @Environment(\.accountSensitiveValuesVisible) private var showsAccountSensitiveValues
+
     let account: CodexAccount
 
     var body: some View {
@@ -13,8 +15,8 @@ struct AccountDetailMetadataGrid: View {
         ) {
             detailRow("Auth mode", details.authMode)
             detailRow("Plan", details.plan)
-            detailRow("Account ID", details.accountIdentifier)
-            detailRow("Fingerprint", details.fingerprint)
+            detailRow("Account ID", details.accountIdentifier, isSensitive: true)
+            detailRow("Fingerprint", details.fingerprint, isSensitive: true)
             detailRow("Saved", formatDate(account.createdAt))
             detailRow("Updated", formatDate(account.updatedAt))
             if let expiry = account.tokenExpiresAt {
@@ -28,15 +30,27 @@ struct AccountDetailMetadataGrid: View {
         date.formatted(date: .abbreviated, time: .shortened)
     }
 
-    private func detailRow(_ title: String, _ value: String) -> some View {
+    private func detailRow(
+        _ title: String,
+        _ value: String,
+        isSensitive: Bool = false
+    ) -> some View {
         GridRow {
             Text(title)
                 .foregroundStyle(.secondary)
-            Text(value)
-                .textSelection(.enabled)
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .fixedSize(horizontal: false, vertical: true)
+            if isSensitive {
+                AccountSensitiveValueText(value, revealed: showsAccountSensitiveValues)
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(value)
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }

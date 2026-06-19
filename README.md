@@ -109,6 +109,32 @@ Release builds are produced by the GitHub Actions workflow in
 publishing, manual release candidates, and Apple Developer ID notarization
 setup.
 
+## Automatic Updates
+
+Release builds can use Sparkle to check GitHub Releases for new versions. The
+app reads its update feed from:
+
+`https://github.com/jarvisluk/Codex-Keyring/releases/latest/download/appcast.xml`
+
+In release builds, open `Settings` to check for updates manually, turn
+automatic update checks on and off, and decide whether checked updates may be
+downloaded and installed automatically.
+
+Before running the `Release` workflow with `create_release` enabled, or before
+pushing a `v*` tag, configure:
+
+- `SPARKLE_PUBLIC_ED_KEY`: repository variable or secret containing the public
+  EdDSA key from Sparkle's `generate_keys` tool.
+- `SPARKLE_PRIVATE_ED_KEY`: repository secret containing the exported private
+  EdDSA key used by `generate_appcast`.
+
+The workflow embeds the public key and feed URL into the app bundle, generates
+`appcast.xml`, signs the update archive metadata, and uploads the appcast with
+the zip asset. Local builds without these values omit Sparkle update
+configuration. Automatic checks are enabled by default in configured release
+builds; automatic downloading and installation stays off until the user enables
+it in Settings.
+
 ## Privacy And Safety
 
 Codex Keyring stores account information locally on your Mac. It does not sync

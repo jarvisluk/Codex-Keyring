@@ -90,9 +90,11 @@ jobs:
 
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="${GITHUB_REF_NAME#v}"
+            tag="$GITHUB_REF_NAME"
             create_release="true"
           else
             version="$INPUT_VERSION"
+            tag="v$version"
             create_release="$INPUT_CREATE_RELEASE"
           fi
 
@@ -115,6 +117,7 @@ jobs:
           esac
 
           echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
           echo "create_release=$create_release" >>"$GITHUB_OUTPUT"
           echo "run_app_smoke=$INPUT_RUN_APP_SMOKE" >>"$GITHUB_OUTPUT"
           echo "notarize=$INPUT_NOTARIZE" >>"$GITHUB_OUTPUT"
@@ -220,6 +223,10 @@ jobs:
           /usr/bin/security find-identity -v -p codesigning "$keychain_path"
 
       - name: Package release
+        env:
+          SPARKLE_FEED_URL: https://github.com/${{ github.repository }}/releases/latest/download/appcast.xml
+          SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY || secrets.SPARKLE_PUBLIC_ED_KEY || '' }}
+          SPARKLE_REQUIRED: ${{ steps.meta.outputs.create_release }}
         shell: bash
         run: |
           set -euo pipefail
@@ -256,6 +263,13 @@ jobs:
           /usr/bin/shasum -a 256 -c *.sha256
           /bin/ls -lh
 
+      - name: Generate Sparkle appcast
+        if: steps.meta.outputs.create_release == 'true'
+        env:
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+          APPCAST_DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/
+        run: ./script/generate_appcast.sh
+
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
@@ -263,6 +277,8 @@ jobs:
           path: |
             dist/release/*.zip
             dist/release/*.sha256
+            dist/release/appcast.xml
+            dist/release/*.delta
             dist/release/*release-notes.md
 
       - name: Create GitHub Release
@@ -273,18 +289,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          shopt -s nullglob
 
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            tag="$GITHUB_REF_NAME"
-          else
-            tag="v$RELEASE_VERSION"
-          fi
+          tag="${{ steps.meta.outputs.tag }}"
 
           notes_file="dist/release/CodexKeyring-$RELEASE_VERSION-release-notes.md"
           assets=(
             dist/release/*.zip
             dist/release/*.sha256
             dist/release/*release-notes.md
+            dist/release/appcast.xml
+            dist/release/*.delta
           )
 
           if gh release view "$tag" >/dev/null 2>&1; then

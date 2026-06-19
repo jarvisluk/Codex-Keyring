@@ -20,15 +20,27 @@ final class SidebarAccountPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(presentation.title, "Work")
-        XCTAssertEqual(presentation.subtitle, "person@example.com")
-        XCTAssertEqual(presentation.quotaSummary, "5h 75%")
-        XCTAssertEqual(presentation.quotaAccessibilitySummary, "5h 75% left")
+        XCTAssertEqual(presentation.detailSummary, "Plus - 5h 75%")
+        XCTAssertEqual(presentation.detailAccessibilitySummary, "Plus - 5h 75% left")
         XCTAssertEqual(presentation.statusSystemImage, "checkmark.circle.fill")
         XCTAssertEqual(presentation.statusIconTint, .active)
         XCTAssertEqual(presentation.titleTint, .primary)
-        XCTAssertEqual(presentation.secondaryTextTint, .secondary)
         XCTAssertEqual(presentation.quotaTextTint, .quotaHealth(.ready))
-        XCTAssertEqual(presentation.accessibilitySummary, "Work, person@example.com, active, 5h 75% left")
+        XCTAssertEqual(presentation.accessibilitySummary, "Work, active, Plus - 5h 75% left")
+    }
+
+    func testSidebarAccountPresentationDoesNotExposeEmailFallback() {
+        let account = makePresentationAccount(alias: "", email: "person@example.com", plan: "Business")
+
+        let presentation = SidebarAccountPresentation(
+            account: account,
+            isActive: true,
+            quotaState: nil
+        )
+
+        XCTAssertEqual(presentation.title, "Unnamed account")
+        XCTAssertEqual(presentation.detailSummary, "Business")
+        XCTAssertEqual(presentation.accessibilitySummary, "Unnamed account, active, Business")
     }
 
     func testSidebarAccountPresentationCarriesSelectedTints() {
@@ -43,7 +55,6 @@ final class SidebarAccountPresentationTests: XCTestCase {
 
         XCTAssertEqual(presentation.statusIconTint, .selectedSecondary)
         XCTAssertEqual(presentation.titleTint, .selectedPrimary)
-        XCTAssertEqual(presentation.secondaryTextTint, .selectedSecondary)
         XCTAssertEqual(presentation.quotaTextTint, .selectedPrimary)
     }
 }

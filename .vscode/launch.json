@@ -39,6 +39,46 @@
             "target": "CodexKeyring",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release CodexKeyring"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Codex Keyring}",
+            "name": "Debug ckr",
+            "target": "ckr",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug ckr"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Codex Keyring}",
+            "name": "Release ckr",
+            "target": "ckr",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release ckr"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Codex Keyring}",
+            "name": "Debug codex-keyring",
+            "target": "codex-keyring",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug codex-keyring"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Codex Keyring}",
+            "name": "Release codex-keyring",
+            "target": "codex-keyring",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release codex-keyring"
         }
     ]
 }

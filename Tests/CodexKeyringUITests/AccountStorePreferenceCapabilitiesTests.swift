@@ -9,6 +9,7 @@ final class AccountStorePreferenceCapabilitiesTests: XCTestCase {
         XCTAssertFalse(busyCapabilities.canSetRestartCodexAppAfterSwitch(to: false))
         XCTAssertFalse(busyCapabilities.canSetAllowNetworkQuotaAPIs(to: true))
         XCTAssertFalse(busyCapabilities.canSetQuotaRefreshInterval(to: 5))
+        XCTAssertFalse(busyCapabilities.canSetShowDockIcon(to: false))
 
         let idleCapabilities = makeAccountStoreCapabilities(
             settings: quotaEnabledSettings(),
@@ -20,5 +21,6 @@ final class AccountStorePreferenceCapabilitiesTests: XCTestCase {
         XCTAssertTrue(idleCapabilities.canSetAllowNetworkQuotaAPIs(to: false))
         XCTAssertTrue(idleCapabilities.canSetQuotaRefreshInterval(to: 5))
         XCTAssertTrue(idleCapabilities.canSetLaunchAtLogin(to: true))
+        XCTAssertTrue(idleCapabilities.canSetShowDockIcon(to: false))
     }
 }

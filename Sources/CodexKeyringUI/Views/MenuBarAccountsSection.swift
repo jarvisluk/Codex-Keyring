@@ -44,12 +44,15 @@ struct MenuBarAccountsSection: View {
     private func quotaLine(for account: CodexAccount) -> some View {
         if let quotaState = store.quotaStates[account.id],
            let presentation = MenuBarQuotaPresentation(state: quotaState) {
-            Button {} label: {
+            HStack(alignment: .firstTextBaseline, spacing: KeyringStyle.Spacing.small) {
+                Color.clear
+                    .frame(width: KeyringStyle.Icon.rowWidth, height: KeyringStyle.Icon.statusSize)
+                    .accessibilityHidden(true)
+
                 Text(presentation.title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(presentation.health.tint)
             }
-            .buttonStyle(.plain)
         }
     }
 }

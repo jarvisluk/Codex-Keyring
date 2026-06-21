@@ -53,10 +53,6 @@ extension ContentView {
             .keyboardShortcut("r", modifiers: [.command])
             .help("Refresh accounts")
         }
-
-        ToolbarItem {
-            Spacer()
-        }
     }
 
     func performToolbarLoginAction() {

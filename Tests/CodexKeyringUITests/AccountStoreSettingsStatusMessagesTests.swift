@@ -26,6 +26,10 @@ final class AccountStoreSettingsStatusMessagesTests: XCTestCase {
             "Launch at login enabled."
         )
         XCTAssertEqual(
+            AccountStoreStatusMessages.showDockIcon(enabled: false),
+            "Dock icon hidden."
+        )
+        XCTAssertEqual(
             AccountStoreStatusMessages.logExport(destination: destination),
             "Logs exported to /tmp/codex-keyring.log."
         )

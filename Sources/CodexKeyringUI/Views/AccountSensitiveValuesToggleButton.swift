@@ -7,11 +7,28 @@ struct AccountSensitiveValuesToggleButton: View {
         Button {
             isVisible.toggle()
         } label: {
-            ToolbarActionLabel(
-                isVisible ? "Hide Sensitive Info" : "Show Sensitive Info",
-                systemImage: isVisible ? "eye.slash" : "eye"
-            )
+            Image(systemName: systemImage)
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(.primary)
+                .frame(
+                    width: KeyringStyle.Icon.toolbarSize,
+                    height: KeyringStyle.Icon.toolbarSize
+                )
+                .accessibilityHidden(true)
         }
-        .help(isVisible ? "Hide account-sensitive values." : "Show account-sensitive values.")
+        .accessibilityLabel(title)
+        .help(helpText)
+    }
+
+    private var title: String {
+        isVisible ? "Hide Sensitive Info" : "Show Sensitive Info"
+    }
+
+    private var systemImage: String {
+        isVisible ? "eye.slash" : "eye"
+    }
+
+    private var helpText: String {
+        isVisible ? "Hide account-sensitive values." : "Show account-sensitive values."
     }
 }

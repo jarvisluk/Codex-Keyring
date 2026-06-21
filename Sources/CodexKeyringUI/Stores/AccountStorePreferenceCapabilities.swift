@@ -32,4 +32,8 @@ extension AccountStoreCapabilities {
             && settings.launchAtLogin != enabled
             && canEditPreferences
     }
+
+    func canSetShowDockIcon(to enabled: Bool) -> Bool {
+        settings.showDockIcon != enabled && canEditPreferences
+    }
 }

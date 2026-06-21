@@ -49,4 +49,15 @@ final class UpdateSettingsUseCaseTests: XCTestCase {
         XCTAssertEqual(settings.quotaRefreshIntervalMinutes, 15)
         XCTAssertEqual(repository.saveCount, 0)
     }
+
+    func testUpdateSettingsPersistsDockIconPreference() async throws {
+        let repository = settingsRepository(AppSettings(showDockIcon: true))
+
+        let settings = try await UpdateSettingsUseCase(repository: repository)
+            .setShowDockIcon(false)
+
+        let saved = try await repository.load()
+        XCTAssertFalse(settings.showDockIcon)
+        XCTAssertFalse(saved.settings.showDockIcon)
+    }
 }

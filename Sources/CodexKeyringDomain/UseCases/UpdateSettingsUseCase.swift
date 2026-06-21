@@ -24,6 +24,10 @@ public struct UpdateSettingsUseCase: Sendable {
         try await mutate { $0.launchAtLogin = value }
     }
 
+    public func setShowDockIcon(_ value: Bool) async throws -> AppSettings {
+        try await mutate { $0.showDockIcon = value }
+    }
+
     public func setPreserveAgentPreferencesPerAccount(_ value: Bool) async throws -> AppSettings {
         try await mutate { $0.preserveAgentPreferencesPerAccount = value }
     }

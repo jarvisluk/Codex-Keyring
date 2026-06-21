@@ -128,6 +128,8 @@ struct CodexKeyringCLIService: Sendable {
             switch key {
             case "restartCodexAppAfterSwitch", "restart-after-switch":
                 return try await update.setRestartCodexAppAfterSwitch(try parseBool(value))
+            case "showDockIcon", "show-dock-icon":
+                return try await update.setShowDockIcon(try parseBool(value))
             case "allowNetworkQuotaAPIs", "allow-network-quota-apis":
                 return try await update.setAllowNetworkQuotaAPIs(try parseBool(value))
             case "quotaRefreshIntervalMinutes", "quota-refresh-interval-minutes":
@@ -146,7 +148,7 @@ struct CodexKeyringCLIService: Sendable {
                 return try await update.setPreserveAgentPreferencesPerAccount(try parseBool(value))
             default:
                 throw CodexKeyringCLIExecutionError.invalidValue(
-                    "Unknown setting '\(key)'. Supported settings: restartCodexAppAfterSwitch, allowNetworkQuotaAPIs, quotaRefreshIntervalMinutes, preserveAgentPreferencesPerAccount."
+                    "Unknown setting '\(key)'. Supported settings: restartCodexAppAfterSwitch, showDockIcon, allowNetworkQuotaAPIs, quotaRefreshIntervalMinutes, preserveAgentPreferencesPerAccount."
                 )
             }
         }

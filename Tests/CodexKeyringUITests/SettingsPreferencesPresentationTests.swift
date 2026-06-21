@@ -23,6 +23,7 @@ final class SettingsPreferencesPresentationTests: XCTestCase {
             restartCodexAppAfterSwitch: true,
             quotaRefreshIntervalMinutes: 15,
             canToggleLaunchAtLogin: true,
+            canToggleShowDockIcon: true,
             canToggleRestartCodexAppAfterSwitch: false,
             canTogglePreserveAgentPreferencesPerAccount: true,
             canToggleAllowNetworkQuotaAPIs: false,
@@ -30,6 +31,7 @@ final class SettingsPreferencesPresentationTests: XCTestCase {
         )
 
         XCTAssertTrue(presentation.canToggleLaunchAtLogin)
+        XCTAssertTrue(presentation.canToggleShowDockIcon)
         XCTAssertFalse(presentation.canToggleRestartCodexAppAfterSwitch)
         XCTAssertTrue(presentation.canTogglePreserveAgentPreferencesPerAccount)
         XCTAssertFalse(presentation.quotaAPI.canToggleAllowNetworkQuotaAPIs)

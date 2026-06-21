@@ -48,12 +48,14 @@ struct CLIStatusDTO: Codable, Equatable {
 
 struct CLISettingsDTO: Codable, Equatable {
     var restartCodexAppAfterSwitch: Bool
+    var showDockIcon: Bool
     var allowNetworkQuotaAPIs: Bool
     var quotaRefreshIntervalMinutes: Int
     var preserveAgentPreferencesPerAccount: Bool
 
     init(settings: AppSettings) {
         self.restartCodexAppAfterSwitch = settings.restartCodexAppAfterSwitch
+        self.showDockIcon = settings.showDockIcon
         self.allowNetworkQuotaAPIs = settings.allowNetworkQuotaAPIs
         self.quotaRefreshIntervalMinutes = settings.quotaRefreshIntervalMinutes
         self.preserveAgentPreferencesPerAccount = settings.preserveAgentPreferencesPerAccount
@@ -148,6 +150,7 @@ enum CLIFormat {
             lines.append("Current auth: not found")
         }
         lines.append("Restart after switch: \(state.settings.restartCodexAppAfterSwitch)")
+        lines.append("Dock icon: \(state.settings.showDockIcon ? "shown" : "hidden")")
         lines.append("Quota APIs: \(state.settings.allowNetworkQuotaAPIs ? "enabled" : "disabled")")
         lines.append("Quota refresh interval: \(state.settings.quotaRefreshIntervalMinutes)m")
         lines.append("Preserve agent preferences: \(state.settings.preserveAgentPreferencesPerAccount)")
@@ -157,6 +160,7 @@ enum CLIFormat {
     static func settings(_ settings: AppSettings) -> String {
         [
             "restartCodexAppAfterSwitch: \(settings.restartCodexAppAfterSwitch)",
+            "showDockIcon: \(settings.showDockIcon)",
             "allowNetworkQuotaAPIs: \(settings.allowNetworkQuotaAPIs)",
             "quotaRefreshIntervalMinutes: \(settings.quotaRefreshIntervalMinutes)",
             "preserveAgentPreferencesPerAccount: \(settings.preserveAgentPreferencesPerAccount)"

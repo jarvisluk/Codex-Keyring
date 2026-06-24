@@ -16,7 +16,7 @@ extension LoginNewAccountUseCase {
             do {
                 try await installer.removeStagedAuth(url)
             } catch {
-                failures.append("\(url.path): \(error.localizedDescription)")
+                failures.append("Could not remove a staged auth copy: \(error.localizedDescription)")
             }
         }
         guard !failures.isEmpty else { return nil }

@@ -73,6 +73,13 @@ final class AddAccountUseCaseFailureCleanupTests: XCTestCase {
             XCTAssertTrue(originalReason.contains("disk full"))
             XCTAssertTrue(cleanupReason.contains("delete denied"))
             XCTAssertEqual(snapshotFileName, "\(try XCTUnwrap(repository.lastSnapshotWrite?.accountID).uuidString).auth.json")
+            XCTAssertFalse(
+                CodexKeyringError.snapshotCleanupFailed(
+                    originalReason: originalReason,
+                    cleanupReason: cleanupReason,
+                    snapshotFileName: snapshotFileName
+                ).localizedDescription.contains(snapshotFileName)
+            )
         } catch {
             XCTFail("Unexpected error: \(error)")
         }

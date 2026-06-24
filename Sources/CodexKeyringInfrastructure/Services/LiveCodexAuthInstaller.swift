@@ -50,7 +50,7 @@ public final class LiveCodexAuthInstaller: CodexAuthInstalling, @unchecked Senda
                     try self.fileManager.moveItem(at: tmp, to: self.liveAuthFileURL)
                 }
                 try self.setPrivateFilePermissions(at: self.liveAuthFileURL)
-                self.log.info("installed snapshot \(snapshot.lastPathComponent)")
+                self.log.info("installed saved auth snapshot")
             } catch {
                 try? self.fileManager.removeItem(at: tmp)
                 throw CodexKeyringError.fileSystemFailure(reason: "Could not install snapshot: \(error.localizedDescription)")

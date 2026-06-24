@@ -201,14 +201,14 @@ jobs:
           fi
 
       - name: Verify release build
-        run: ./script/verify.sh --clean --release
+        run: bash ./script/verify.sh --clean --release
 
       - name: Smoke test release app
         if: steps.meta.outputs.run_app_smoke == 'true'
         run: |
           VERIFY_TIMEOUT_SECONDS=20 \
           SWIFT_WARNINGS_AS_ERRORS=1 \
-          ./script/build_and_run.sh --verify --release
+          bash ./script/build_and_run.sh --verify --release
 
       - name: Import Developer ID certificate
         if: steps.release_mode.outputs.signing_enabled == 'true'
@@ -271,7 +271,7 @@ jobs:
             )
           fi
 
-          env "${package_env[@]}" ./script/package_release.sh
+          env "${package_env[@]}" bash ./script/package_release.sh
 
       - name: Verify release artifacts
         run: |
@@ -286,7 +286,7 @@ jobs:
         env:
           SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
           APPCAST_DOWNLOAD_URL_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/
-        run: ./script/generate_appcast.sh
+        run: bash ./script/generate_appcast.sh
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4

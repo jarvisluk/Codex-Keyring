@@ -31,8 +31,9 @@ final class LoginNewAccountUseCaseTests: XCTestCase {
         XCTAssertEqual(fixture.registry.metadata(for: fixture.preLoginStage)?.fingerprint, "old")
         XCTAssertEqual(fixture.registry.metadata(for: fixture.newLoginStage)?.fingerprint, "new")
         XCTAssertEqual(fixture.installer.removeStagedCount, 2)
-        XCTAssertTrue(result.cleanupWarningReason?.contains("/tmp/pre-login-1.json") == true)
-        XCTAssertTrue(result.cleanupWarningReason?.contains("/tmp/new-login-2.json") == true)
+        XCTAssertTrue(result.cleanupWarningReason?.contains("Could not remove a staged auth copy") == true)
+        XCTAssertFalse(result.cleanupWarningReason?.contains(fixture.preLoginStage.path) == true)
+        XCTAssertFalse(result.cleanupWarningReason?.contains(fixture.newLoginStage.path) == true)
         XCTAssertTrue(result.cleanupWarningReason?.contains("cleanup denied") == true)
     }
 

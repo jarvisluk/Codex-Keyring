@@ -61,8 +61,9 @@ final class AccountStoreLoginCleanupWarningIntegrationTests: XCTestCase {
         XCTAssertEqual(store.accounts.map(\.alias), ["new"])
         XCTAssertTrue(store.statusMessage.contains("Saved new Codex login as new."))
         XCTAssertTrue(store.statusMessage.contains("Temporary login files could not be cleaned up"))
-        XCTAssertTrue(store.statusMessage.contains("/tmp/pre-login.json"))
-        XCTAssertTrue(store.statusMessage.contains("/tmp/new-login.json"))
+        XCTAssertTrue(store.statusMessage.contains("Could not remove a staged auth copy"))
+        XCTAssertFalse(store.statusMessage.contains(preLoginURL.path))
+        XCTAssertFalse(store.statusMessage.contains(newLoginURL.path))
         XCTAssertTrue(store.statusMessage.contains("cleanup denied"))
     }
 }

@@ -14,7 +14,7 @@ extension FileSystemManifestRepository {
     public func deleteSnapshot(named fileName: String) async throws {
         try await performIO {
             try self.snapshotStore.delete(named: fileName)
-            self.log.debug("snapshot deleted \(fileName)")
+            self.log.debug("snapshot deleted")
         }
     }
 

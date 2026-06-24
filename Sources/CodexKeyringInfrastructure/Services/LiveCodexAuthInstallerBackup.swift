@@ -16,7 +16,7 @@ extension LiveCodexAuthInstaller {
                 let destination = self.uniqueBackupDestination(stem: stem)
                 try self.fileManager.copyItem(at: self.liveAuthFileURL, to: destination)
                 try self.setPrivateFilePermissions(at: destination)
-                self.log.info("backed up live auth to \(destination.lastPathComponent)")
+                self.log.info("backed up live auth")
                 return destination
             } catch {
                 throw CodexKeyringError.backupFailed(reason: error.localizedDescription)

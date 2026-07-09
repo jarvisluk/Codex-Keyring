@@ -7,6 +7,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var defaultsVersion: Int
     public var restartCodexAppAfterSwitch: Bool
     public var launchAtLogin: Bool
+    public var showDockIcon: Bool
     public var allowNetworkQuotaAPIs: Bool
     public var quotaRefreshIntervalMinutes: Int
     /// When true, the switch flow captures the current Codex agent preferences
@@ -21,6 +22,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         defaultsVersion: Int = Self.currentDefaultsVersion,
         restartCodexAppAfterSwitch: Bool = true,
         launchAtLogin: Bool = false,
+        showDockIcon: Bool = true,
         allowNetworkQuotaAPIs: Bool = false,
         quotaRefreshIntervalMinutes: Int = 15,
         preserveAgentPreferencesPerAccount: Bool = true
@@ -28,6 +30,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.defaultsVersion = defaultsVersion
         self.restartCodexAppAfterSwitch = restartCodexAppAfterSwitch
         self.launchAtLogin = launchAtLogin
+        self.showDockIcon = showDockIcon
         self.allowNetworkQuotaAPIs = allowNetworkQuotaAPIs
         self.quotaRefreshIntervalMinutes = Self.normalizedQuotaRefreshInterval(quotaRefreshIntervalMinutes)
         self.preserveAgentPreferencesPerAccount = preserveAgentPreferencesPerAccount
@@ -37,6 +40,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case defaultsVersion
         case restartCodexAppAfterSwitch
         case launchAtLogin
+        case showDockIcon
         case allowNetworkQuotaAPIs
         case quotaRefreshIntervalMinutes
         case preserveAgentPreferencesPerAccount
@@ -52,6 +56,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             forKey: .restartCodexAppAfterSwitch
         ) ?? true
         self.launchAtLogin = try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+        self.showDockIcon = try container.decodeIfPresent(Bool.self, forKey: .showDockIcon) ?? true
         self.allowNetworkQuotaAPIs = try container.decodeIfPresent(Bool.self, forKey: .allowNetworkQuotaAPIs) ?? false
         self.quotaRefreshIntervalMinutes = Self.normalizedQuotaRefreshInterval(
             try container.decodeIfPresent(Int.self, forKey: .quotaRefreshIntervalMinutes) ?? 15

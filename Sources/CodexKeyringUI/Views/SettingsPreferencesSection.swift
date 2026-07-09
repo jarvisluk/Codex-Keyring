@@ -8,6 +8,7 @@ struct SettingsPreferencesSection: View {
             restartCodexAppAfterSwitch: store.settings.restartCodexAppAfterSwitch,
             quotaRefreshIntervalMinutes: store.settings.quotaRefreshIntervalMinutes,
             canToggleLaunchAtLogin: store.canSetLaunchAtLogin(to: !store.settings.launchAtLogin),
+            canToggleShowDockIcon: store.canSetShowDockIcon(to: !store.settings.showDockIcon),
             canToggleRestartCodexAppAfterSwitch: store.canSetRestartCodexAppAfterSwitch(
                 to: !store.settings.restartCodexAppAfterSwitch
             ),
@@ -24,6 +25,7 @@ struct SettingsPreferencesSection: View {
     var body: some View {
         SettingsSection("Preferences") {
             launchAtLoginToggle
+            showDockIconToggle
             restartCodexAppToggle
             preserveAgentPreferencesToggle
             SettingsQuotaAPIControls(presentation: presentation.quotaAPI)
@@ -36,6 +38,14 @@ struct SettingsPreferencesSection: View {
             set: { store.setLaunchAtLogin($0) }
         ))
         .disabled(!presentation.canToggleLaunchAtLogin)
+    }
+
+    private var showDockIconToggle: some View {
+        Toggle("Show Dock icon", isOn: Binding(
+            get: { store.settings.showDockIcon },
+            set: { store.setShowDockIcon($0) }
+        ))
+        .disabled(!presentation.canToggleShowDockIcon)
     }
 
     private var restartCodexAppToggle: some View {

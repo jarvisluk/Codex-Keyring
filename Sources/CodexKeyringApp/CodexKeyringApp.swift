@@ -45,6 +45,9 @@ struct CodexKeyringApp: App {
             AppMenuBarIconView(isActive: presentation.isActive)
                 .accessibilityLabel(presentation.statusLabel)
                 .help(presentation.statusLabel)
+                .onChange(of: store.settings.showDockIcon, initial: true) { _, showDockIcon in
+                    DockIconController.apply(showDockIcon: showDockIcon)
+                }
         }
         .menuBarExtraStyle(.menu)
         .commands {

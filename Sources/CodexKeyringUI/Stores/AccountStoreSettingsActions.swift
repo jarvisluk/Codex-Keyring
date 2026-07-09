@@ -66,4 +66,18 @@ extension AccountStore {
         }
     }
 
+    public func setShowDockIcon(_ enabled: Bool) {
+        guard canSetShowDockIcon(to: enabled) else { return }
+        runPersistedSettingsUpdate(
+            statusMessage: { settings in
+                AccountStoreStatusMessages.showDockIcon(enabled: settings.showDockIcon)
+            },
+            logMessage: { settings in
+                "setting showDockIcon=\(settings.showDockIcon)"
+            }
+        ) {
+            try await self.useCases.updateSettings.setShowDockIcon(enabled)
+        }
+    }
+
 }

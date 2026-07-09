@@ -105,7 +105,11 @@ struct AccountDetailView: View {
 
     @ToolbarContentBuilder
     private var sensitiveValuesToolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(placement: .automatic) {
+            Spacer()
+        }
+
+        ToolbarItem(placement: .automatic) {
             AccountSensitiveValuesToggleButton(isVisible: $showsAccountSensitiveValues)
         }
     }

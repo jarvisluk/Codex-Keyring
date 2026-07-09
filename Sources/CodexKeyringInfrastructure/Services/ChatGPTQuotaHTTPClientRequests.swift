@@ -17,6 +17,21 @@ extension ChatGPTQuotaHTTPClient {
 
     func makeUsageRequest(accessToken: String, accountID: String?) -> URLRequest {
         var request = URLRequest(url: usageURL)
+        configureAuthenticatedGET(&request, accessToken: accessToken, accountID: accountID)
+        return request
+    }
+
+    func makeRateLimitResetCreditsRequest(accessToken: String, accountID: String?) -> URLRequest {
+        var request = URLRequest(url: rateLimitResetCreditsURL)
+        configureAuthenticatedGET(&request, accessToken: accessToken, accountID: accountID)
+        return request
+    }
+
+    private func configureAuthenticatedGET(
+        _ request: inout URLRequest,
+        accessToken: String,
+        accountID: String?
+    ) {
         request.httpMethod = "GET"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -24,6 +39,5 @@ extension ChatGPTQuotaHTTPClient {
         if let accountID, !accountID.isEmpty {
             request.setValue(accountID, forHTTPHeaderField: "ChatGPT-Account-Id")
         }
-        return request
     }
 }

@@ -24,4 +24,8 @@ extension AccountStoreStatusMessages {
     static func launchAtLogin(enabled: Bool) -> String {
         enabled ? "Launch at login enabled." : "Launch at login disabled."
     }
+
+    static func showDockIcon(enabled: Bool) -> String {
+        enabled ? "Dock icon enabled." : "Dock icon hidden."
+    }
 }

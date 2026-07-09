@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -165,7 +165,7 @@ env \
   SPARKLE_FEED_URL="$SPARKLE_FEED_URL" \
   SPARKLE_PUBLIC_ED_KEY="$SPARKLE_PUBLIC_ED_KEY" \
   SWIFT_WARNINGS_AS_ERRORS=1 \
-  "$ROOT_DIR/script/build_and_run.sh" "${build_args[@]}"
+  bash "$ROOT_DIR/script/build_and_run.sh" "${build_args[@]}"
 
 sign_executables() {
   local sign_identity="$1"

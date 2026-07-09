@@ -231,6 +231,7 @@ public struct CodexKeyringCLI: Sendable {
 
     Settings:
       restartCodexAppAfterSwitch true|false
+      showDockIcon true|false
       allowNetworkQuotaAPIs true|false
       quotaRefreshIntervalMinutes 5|15|30
       preserveAgentPreferencesPerAccount true|false

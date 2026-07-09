@@ -4,6 +4,7 @@ struct SettingsPreferencesPresentation: Equatable {
     let restartCodexAppNote: String
     let agentPreferencesNote: String
     let canToggleLaunchAtLogin: Bool
+    let canToggleShowDockIcon: Bool
     let canToggleRestartCodexAppAfterSwitch: Bool
     let canTogglePreserveAgentPreferencesPerAccount: Bool
     let quotaAPI: SettingsQuotaAPIPresentation
@@ -12,12 +13,14 @@ struct SettingsPreferencesPresentation: Equatable {
         restartCodexAppAfterSwitch: Bool,
         quotaRefreshIntervalMinutes: Int,
         canToggleLaunchAtLogin: Bool = false,
+        canToggleShowDockIcon: Bool = false,
         canToggleRestartCodexAppAfterSwitch: Bool = false,
         canTogglePreserveAgentPreferencesPerAccount: Bool = false,
         canToggleAllowNetworkQuotaAPIs: Bool = false,
         canEditQuotaRefreshInterval: Bool = false
     ) {
         self.canToggleLaunchAtLogin = canToggleLaunchAtLogin
+        self.canToggleShowDockIcon = canToggleShowDockIcon
         self.canToggleRestartCodexAppAfterSwitch = canToggleRestartCodexAppAfterSwitch
         self.canTogglePreserveAgentPreferencesPerAccount = canTogglePreserveAgentPreferencesPerAccount
         restartCodexAppNote = "Leave this on when you want Codex App to reload auth immediately. Per-account agent settings are restored only during a restart."

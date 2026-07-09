@@ -1,3 +1,4 @@
+import Foundation
 import CodexKeyringDomain
 
 extension AccountQuotaState {
@@ -47,10 +48,23 @@ extension AccountQuotaState {
     }
 
     var menuDetailSummary: String? {
+        menuDetailSummary(now: Date())
+    }
+
+    func menuDetailSummary(now: Date) -> String? {
         if phase == .loading { return "checking quotas" }
         guard let bucket = snapshot?.primaryBucket else {
-            return menuSummary
+            return resetCreditMenuSummary(now: now) ?? menuSummary
         }
-        return bucket.compactLimitSummary?.cappedMenuBarText ?? menuSummary
+        let summary = bucket.compactLimitSummary ?? menuSummary
+        let resetSummary = resetCreditMenuSummary(now: now)
+        let combined = [summary, resetSummary]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        return combined.isEmpty ? nil : combined.cappedMenuBarText
+    }
+
+    private func resetCreditMenuSummary(now: Date) -> String? {
+        snapshot?.rateLimitResetCredits?.compactMenuSummary(now: now)
     }
 }

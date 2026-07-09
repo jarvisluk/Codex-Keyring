@@ -7,6 +7,7 @@ enum ChatGPTQuotaSnapshotMapper {
         account: CodexAccount,
         auth: StoredChatGPTAuth,
         endpoint: String,
+        resetCredits: AccountRateLimitResetCredits? = nil,
         fetchedAt: Date = Date()
     ) throws -> AccountQuotaSnapshot {
         let planType = nonEmpty(payload.planType)
@@ -40,7 +41,12 @@ enum ChatGPTQuotaSnapshotMapper {
             email: email,
             fetchedAt: fetchedAt,
             buckets: buckets,
-            endpoint: endpoint
+            endpoint: endpoint,
+            rateLimitResetCredits: resetCredits ?? ChatGPTRateLimitResetCreditsMapper.makeSummary(
+                payload: payload.rateLimitResetCredits,
+                fetchedAt: fetchedAt,
+                endpoint: endpoint
+            )
         )
     }
 

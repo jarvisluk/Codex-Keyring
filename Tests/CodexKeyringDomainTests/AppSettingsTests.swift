@@ -27,6 +27,22 @@ final class AppSettingsTests: XCTestCase {
         XCTAssertFalse(decoded.preserveAgentPreferencesPerAccount)
     }
 
+    func testAppSettingsDefaultsMissingDockIconToShown() throws {
+        let decoded = try decodeSettings("{}")
+
+        XCTAssertTrue(decoded.showDockIcon)
+    }
+
+    func testAppSettingsHonoursExplicitlyHiddenDockIcon() throws {
+        let decoded = try decodeSettings("""
+        {
+          "showDockIcon": false
+        }
+        """)
+
+        XCTAssertFalse(decoded.showDockIcon)
+    }
+
     func testAppSettingsDefaultsRestartCodexAppOn() {
         let defaults = AppSettings()
         XCTAssertTrue(defaults.restartCodexAppAfterSwitch)
@@ -36,6 +52,11 @@ final class AppSettingsTests: XCTestCase {
     func testAppSettingsDefaultsPreserveAgentPreferencesOn() {
         let defaults = AppSettings()
         XCTAssertTrue(defaults.preserveAgentPreferencesPerAccount)
+    }
+
+    func testAppSettingsDefaultsDockIconShown() {
+        let defaults = AppSettings()
+        XCTAssertTrue(defaults.showDockIcon)
     }
 
     func testAppSettingsDefaultsQuotaRefreshInterval() {

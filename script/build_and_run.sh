@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 APP_NAME="CodexKeyring"
@@ -21,6 +21,7 @@ APP_FRAMEWORKS="$APP_CONTENTS/Frameworks"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 CLI_BINARY="$APP_RESOURCES/$CLI_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+BUNDLE_FRAMEWORK_RPATH="@executable_path/../Frameworks"
 APP_ICON_SOURCE="$ROOT_DIR/Resources/AppIcon.icns"
 APP_ICON_NAME="AppIcon"
 MENU_BAR_ICON_SOURCE="$ROOT_DIR/Resources/MenuBarIcon.svg"
@@ -34,6 +35,28 @@ SPARKLE_AUTOMATICALLY_UPDATE="${SPARKLE_AUTOMATICALLY_UPDATE:-0}"
 STAGED_APP_AD_HOC_SIGN="${STAGED_APP_AD_HOC_SIGN:-1}"
 
 cd "$ROOT_DIR"
+
+resolve_otool() {
+  local developer_dir="${DEVELOPER_DIR:-}"
+  local candidate
+
+  if [[ -z "$developer_dir" ]]; then
+    developer_dir="$(/usr/bin/xcode-select -p 2>/dev/null || true)"
+  fi
+
+  for candidate in \
+    "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/bin/otool" \
+    "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/otool" \
+    "/usr/bin/otool"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  echo "otool was not found." >&2
+  return 1
+}
 
 usage() {
   cat <<USAGE
@@ -88,6 +111,7 @@ swift_build_args=()
 if [[ "$BUILD_CONFIGURATION" == "release" ]]; then
   swift_build_args=(-c release)
 fi
+swift_build_args+=(-Xlinker -rpath -Xlinker "$BUNDLE_FRAMEWORK_RPATH")
 if [[ "$SWIFT_WARNINGS_AS_ERRORS" == "1" ]]; then
   swift_build_args+=(-Xswiftc -warnings-as-errors)
 fi
@@ -112,16 +136,22 @@ copy_sparkle_framework() {
   /usr/bin/ditto "$framework_source" "$APP_FRAMEWORKS/Sparkle.framework"
 }
 
-add_bundle_framework_rpath() {
-  if ! otool -l "$APP_BINARY" | grep -q "@executable_path/../Frameworks"; then
-    /usr/bin/codesign --remove-signature "$APP_BINARY" >/dev/null 2>&1 || true
-    /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BINARY"
+verify_bundle_framework_rpath() {
+  local otool_bin
+  otool_bin="$(resolve_otool)"
+  if ! "$otool_bin" -l "$APP_BINARY" | /usr/bin/grep -Fq "$BUNDLE_FRAMEWORK_RPATH"; then
+    echo "App binary is missing required rpath: $BUNDLE_FRAMEWORK_RPATH" >&2
+    exit 1
   fi
 }
 
 sign_staged_app() {
   case "$STAGED_APP_AD_HOC_SIGN" in
     1|true|TRUE|yes|YES)
+      local file
+      while IFS= read -r -d '' file; do
+        /usr/bin/codesign --force --sign - "$file" >/dev/null
+      done < <(/usr/bin/find "$APP_CONTENTS" -type f -perm -111 -print0)
       /usr/bin/codesign --force --sign - "$APP_BUNDLE" >/dev/null
       ;;
   esac
@@ -158,7 +188,7 @@ cp "$MENU_BAR_ICON_SOURCE" "$APP_RESOURCES/MenuBarIcon.svg"
 chmod +x "$APP_BINARY"
 chmod +x "$CLI_BINARY"
 copy_sparkle_framework
-add_bundle_framework_rpath
+verify_bundle_framework_rpath
 
 SPARKLE_INFO_PLIST=""
 if [[ -n "$SPARKLE_FEED_URL" && -n "$SPARKLE_PUBLIC_ED_KEY" ]]; then

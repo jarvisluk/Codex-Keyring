@@ -12,4 +12,10 @@ struct ChatGPTQuotaHTTPClient: @unchecked Sendable {
             .appendingPathComponent("wham")
             .appendingPathComponent("usage")
     }
+
+    var rateLimitResetCreditsURL: URL {
+        baseURL
+            .appendingPathComponent("wham")
+            .appendingPathComponent("rate-limit-reset-credits")
+    }
 }

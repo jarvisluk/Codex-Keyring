@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -89,7 +89,8 @@ key_args=()
 if grep -q -- "--ed-key-file" <<<"$help_text"; then
   key_args=(--ed-key-file "$private_key_file")
 else
-  key_args=(-s "$(<"$private_key_file")")
+  echo "generate_appcast does not support --ed-key-file; refusing to pass the private key on the command line." >&2
+  exit 1
 fi
 
 "$generate_appcast" \

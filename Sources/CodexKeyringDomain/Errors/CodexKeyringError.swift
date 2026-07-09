@@ -61,8 +61,8 @@ extension CodexKeyringError: LocalizedError {
             return "Previous Codex auth could not be restored: \(reason)"
         case .manifestRollbackFailed(let originalReason, let rollbackReason):
             return "Account manifest rollback failed after an earlier storage error. Original error: \(originalReason). Rollback error: \(rollbackReason)"
-        case .snapshotCleanupFailed(let originalReason, let cleanupReason, let snapshotFileName):
-            return "Auth snapshot cleanup failed after an earlier storage error. Original error: \(originalReason). Cleanup error: \(cleanupReason). Snapshot file: \(snapshotFileName)"
+        case .snapshotCleanupFailed(let originalReason, let cleanupReason, _):
+            return "Auth snapshot cleanup failed after an earlier storage error. Original error: \(originalReason). Cleanup error: \(cleanupReason)"
         }
     }
 }

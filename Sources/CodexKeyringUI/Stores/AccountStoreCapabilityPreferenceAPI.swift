@@ -26,4 +26,8 @@ extension AccountStore {
     public func canSetLaunchAtLogin(to enabled: Bool) -> Bool {
         capabilities.canSetLaunchAtLogin(to: enabled)
     }
+
+    public func canSetShowDockIcon(to enabled: Bool) -> Bool {
+        capabilities.canSetShowDockIcon(to: enabled)
+    }
 }

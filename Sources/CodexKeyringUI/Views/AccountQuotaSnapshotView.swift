@@ -17,6 +17,11 @@ struct AccountQuotaSnapshotView: View {
                 }
             }
 
+            if let resetCredits = snapshot.rateLimitResetCredits {
+                Divider()
+                AccountRateLimitResetCreditsView(resetCredits: resetCredits)
+            }
+
             Text("Last checked \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))")
                 .font(.caption)
                 .foregroundStyle(.secondary)

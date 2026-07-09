@@ -7,6 +7,7 @@ public struct AccountQuotaSnapshot: Codable, Equatable, Sendable {
     public var fetchedAt: Date
     public var buckets: [QuotaBucket]
     public var endpoint: String?
+    public var rateLimitResetCredits: AccountRateLimitResetCredits?
 
     public init(
         accountID: UUID,
@@ -14,7 +15,8 @@ public struct AccountQuotaSnapshot: Codable, Equatable, Sendable {
         email: String?,
         fetchedAt: Date,
         buckets: [QuotaBucket],
-        endpoint: String?
+        endpoint: String?,
+        rateLimitResetCredits: AccountRateLimitResetCredits? = nil
     ) {
         self.accountID = accountID
         self.planType = planType
@@ -22,6 +24,7 @@ public struct AccountQuotaSnapshot: Codable, Equatable, Sendable {
         self.fetchedAt = fetchedAt
         self.buckets = buckets
         self.endpoint = endpoint
+        self.rateLimitResetCredits = rateLimitResetCredits
     }
 
     public var primaryBucket: QuotaBucket? {

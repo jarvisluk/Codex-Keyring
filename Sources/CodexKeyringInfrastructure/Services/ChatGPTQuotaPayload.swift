@@ -8,6 +8,7 @@ struct UsagePayload: Decodable {
     let credits: CreditsDTO?
     let rateLimitReachedType: ReachedTypeDTO?
     let additionalRateLimits: [AdditionalRateLimitDTO]?
+    let rateLimitResetCredits: RateLimitResetCreditsSummaryDTO?
 
     enum CodingKeys: String, CodingKey {
         case planType = "plan_type"
@@ -17,6 +18,7 @@ struct UsagePayload: Decodable {
         case credits
         case rateLimitReachedType = "rate_limit_reached_type"
         case additionalRateLimits = "additional_rate_limits"
+        case rateLimitResetCredits = "rate_limit_reset_credits"
     }
 
     init(from decoder: Decoder) throws {
@@ -28,5 +30,9 @@ struct UsagePayload: Decodable {
         credits = try container.decodeIfPresent(CreditsDTO.self, forKey: .credits)
         rateLimitReachedType = try container.decodeIfPresent(ReachedTypeDTO.self, forKey: .rateLimitReachedType)
         additionalRateLimits = try container.decodeIfPresent([AdditionalRateLimitDTO].self, forKey: .additionalRateLimits)
+        rateLimitResetCredits = try container.decodeIfPresent(
+            RateLimitResetCreditsSummaryDTO.self,
+            forKey: .rateLimitResetCredits
+        )
     }
 }

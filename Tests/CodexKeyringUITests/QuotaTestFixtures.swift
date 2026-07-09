@@ -19,7 +19,8 @@ func makeQuotaSnapshot(
     fetchedAt: Date = Date(timeIntervalSince1970: 1),
     limitName: String? = nil,
     windows: [QuotaWindow] = [],
-    endpoint: String? = nil
+    endpoint: String? = nil,
+    rateLimitResetCredits: AccountRateLimitResetCredits? = nil
 ) -> AccountQuotaSnapshot {
     AccountQuotaSnapshot(
         accountID: accountID,
@@ -36,7 +37,8 @@ func makeQuotaSnapshot(
                 rateLimitReachedType: nil
             )
         ],
-        endpoint: endpoint
+        endpoint: endpoint,
+        rateLimitResetCredits: rateLimitResetCredits
     )
 }
 
